@@ -9,16 +9,10 @@ import scipy as sp
 from scipy import signal
 from PIL import Image
 import cPickle as pickle
+from load_data import load_data
 
-# get train set
-
-# build model function
-
-# build cost
-
-# train
-
-# test
-
-# print and plot relevant stuff
-
+class conv_net:
+    def __init__(self, config):
+        self.config = config
+        self.data = load_data(config)
+        print "created conv_net"

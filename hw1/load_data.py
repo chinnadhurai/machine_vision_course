@@ -8,16 +8,21 @@ from theano import function
 import scipy as sp
 from scipy import signal
 from PIL import Image
+import os
 
-# get train set
+def unpickle(file):
+    import cPickle
+    fo = open(file, 'rb')
+    dict = cPickle.load(fo)
+    fo.close()
+    return dict
 
-# build model function
 
-# build cost
-
-# train
-
-# test
-
-# print and plot relevant stuff
-
+def load_data(config):
+    print "loading data from", config["dpath"]
+    data_dict = {}
+    for file in os.listdir(config["dpath"]):
+        data_dict[file] = unpickle(config["dpath"] + file)
+    print "----",data_dict.keys()
+    print "data loaded..."
+    return data_dict
