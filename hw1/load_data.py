@@ -17,7 +17,6 @@ def unpickle(file):
     fo.close()
     return dict
 
-
 def mirror_image(X):
     i = 0
     Y = np.ones(shape=X.shape)
@@ -26,23 +25,29 @@ def mirror_image(X):
         i+=1
     return Y
 
-
-
-
 def load_cifar_10_data(config):
     print "loading data from", config['dpath']
     trX = []
     trY = []
     i = 0
     # training data
-    for file in os.listdir( config['dpath'] )[:-1]:
+
+    file = os.listdir( config['dpath'] )[0]
+    data_dict = unpickle( config['dpath'] + file )
+    trX = data_dict['data'].reshape(-1,3,32,32)
+    trY = np.array(data_dict['labels'])
+    trX = np.concatenate((trX, mirror_image(trX)), axis=0)
+    trY = np.concatenate((trY, np.array(data_dict['labels'])), axis=0)
+    #print "--training data :", file, trX.shape, trY.shape
+
+    for file in os.listdir( config['dpath'] )[1:-1]:
         data_dict = unpickle( config['dpath'] + file )
         trdata = data_dict['data'].reshape(-1,3,32,32)
-        trX.append(trdata)
-        trY.append(np.array(data_dict['labels']))
-        trX.append(mirror_image(trdata))
-        trY.append(np.array(data_dict['labels']))
-        print "--training data :", file, trX[i].shape, trY[i].shape
+        trX = np.concatenate((trX, mirror_image(trdata)), axis=0)
+        trY = np.concatenate((trY, np.array(data_dict['labels'])), axis=0)
+        trX = np.concatenate((trX, trdata), axis=0)
+        trY = np.concatenate((trY, np.array(data_dict['labels'])), axis=0)
+        #print "--training data :", file, trX.shape, trY.shape
         i += 1
 
     #test data
@@ -50,6 +55,13 @@ def load_cifar_10_data(config):
     data_dict = unpickle( config['dpath'] + file )
     teX = data_dict['data'].reshape(-1,3,32,32)
     teY = np.array(data_dict['labels'])
-    print "--test data :", file, teX.shape, teY.shape
+    #print "--test data :", file, teX.shape, teY.shape
+
+    trX = trX[0:config['ntrain']]
+    trY = trY[0:config['ntrain']]
+    teX = teX[0:config['ntest']]
+    teY = teY[0:config['ntest']]
+    print "*** final training data :", trX.shape, trY.shape
+    print "*** final test data :", teX.shape, teY.shape
     print "data loaded..."
     return trX,trY,teX,teY

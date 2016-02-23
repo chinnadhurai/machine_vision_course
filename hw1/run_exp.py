@@ -12,8 +12,11 @@ import os
 from conv_net import conv_net
 def get_config():
     config = {}
-    config["dpath"] = os.environ['DATAPATH']
-    config["opath"] = os.environ['OUTPUTPATH']
+    config["dpath"]  = os.environ['DATAPATH']
+    config["opath"]  = os.environ['OUTPUTPATH']
+    config["ntrain"] = 95000 # max is 100000
+    config["ntest"]  = 5000  # max is 10000
+    config["mbsize"] = 128
     return config
 
 

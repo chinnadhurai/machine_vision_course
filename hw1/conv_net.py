@@ -20,6 +20,9 @@ class conv_net:
         self.trX, self.trY, self.teX, self.teY = load_cifar_10_data(config)
         self.X = T.ftensor4()
         self.Y = T.fmatrix()
+
+
+        #weights init
         self.w   = l.init_weights((64, 3, 3, 3))      #conv
         self.w2  = l.init_weights((128, 64, 3, 3))    #conv
         self.w3  = l.init_weights((256, 128, 3, 3))   #conv
@@ -27,6 +30,13 @@ class conv_net:
         self.w5  = l.init_weights((256*3*3, 1024))    #full-conn
         self.w6  = l.init_weights((1024, 1024))       #full-conn
         self.w_o = l.init_weights((1024, 10))         #full-conn
+
+        #batch_norm params
+        b = T.vector('b')
+        g = T.vector('g')
+        m = T.vector('m')
+        v = T.vector('v')
+
         print "created conv_net"
 
     def model(X, w, w2, w3, w4, w5, w6,w_o, p_drop_conv, p_drop_hidden):
