@@ -19,10 +19,15 @@ def unpickle(file):
 
 
 def load_data(config):
-    print "loading data from", config["dpath"]
-    data_dict = {}
-    for file in os.listdir(config["dpath"]):
-        data_dict[file] = unpickle(config["dpath"] + file)
-    print "----",data_dict.keys()
+    print "loading data from", config['dpath']
+    trX = {}
+    trY = {}
+    i = 0
+    for file in os.listdir( config['dpath'] ):
+        data_dict = unpickle( config['dpath'] + file )
+        trX[i]    = data_dict['data'].reshape(-1,3,32,32)
+        trY[i]    = np.array(data_dict['labels'])
+        i += 1
+    print "----", trX[4].shape, trY[4].shape
     print "data loaded..."
-    return data_dict
+    return trX,trY
