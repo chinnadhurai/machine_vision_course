@@ -18,16 +18,30 @@ def unpickle(file):
     return dict
 
 
+def mirror_image(X):
+    i = 0
+    Y = np.ones(shape=X.shape)
+    while i < Y.shape[-1]:
+        Y[:,:,:,i] = X[:,:,:,-1-i]
+        i+=1
+    return Y
+
+
+
+
 def load_cifar_10_data(config):
     print "loading data from", config['dpath']
-    trX = {}
-    trY = {}
+    trX = []
+    trY = []
     i = 0
     # training data
     for file in os.listdir( config['dpath'] )[:-1]:
         data_dict = unpickle( config['dpath'] + file )
-        trX[i]    = data_dict['data'].reshape(-1,3,32,32)
-        trY[i]    = np.array(data_dict['labels'])
+        trdata = data_dict['data'].reshape(-1,3,32,32)
+        trX.append(trdata)
+        trY.append(np.array(data_dict['labels']))
+        trX.append(mirror_image(trdata))
+        trY.append(np.array(data_dict['labels']))
         print "--training data :", file, trX[i].shape, trY[i].shape
         i += 1
 
