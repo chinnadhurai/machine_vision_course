@@ -35,6 +35,22 @@ def mirror_image(X):
         i+=1
     return Y
 
+def mirror_image1(X_train):
+    X2_train = X_train.copy()
+    count = 0
+    for i in range(X2_train.shape[0]):
+        for j in range(X2_train[i].shape[0]):
+            X2_train[i][j] = np.fliplr(X2_train[i][j])
+            count+=1
+    print count
+    return X2_train
+
+def convert_to_image(image, name):
+    image = np.swapaxes(image,0,1)
+    image = np.swapaxes(image,1,2)
+    im = Image.fromarray(image)
+    im.save(name)
+
 def load_cifar_10_data(config):
     print "loading data from", config['dpath']
     trX = []
@@ -54,11 +70,17 @@ def load_cifar_10_data(config):
     for file in os.listdir( config['dpath'] )[1:-1]:
         data_dict = unpickle( config['dpath'] + file )
         trdata = data_dict['data'].reshape(-1,3,32,32)
-        trX = np.concatenate((trX, mirror_image(trdata)), axis=0)
-        trY = np.concatenate((trY, one_hot(np.array(data_dict['labels']),10)), axis=0)
         trX = np.concatenate((trX, trdata), axis=0)
         trY = np.concatenate((trY, one_hot(np.array(data_dict['labels']),10)), axis=0)
+        trX = np.concatenate((trX, mirror_image(trdata)), axis=0)
+        trY = np.concatenate((trY, one_hot(np.array(data_dict['labels']),10)), axis=0)
         #print "--training data :", file, trX.shape, trY.shape
+        if i == 0:
+            convert_to_image(trdata[2],"normal1.jpg")
+            mirrod_image =  (mirror_image1(trdata))[2]
+            print mirrod_image.shape
+            convert_to_image(mirrod_image,"flipped1.jpg")
+
         i += 1
 
     #test data
@@ -68,10 +90,10 @@ def load_cifar_10_data(config):
     teY = np.array(data_dict['labels'])
     #print "--test data :", file, teX.shape, teY.shape
 
-    trX = trX[0:config['ntrain']]
-    trY = trY[0:config['ntrain']]
-    teX = teX[0:config['ntest']]
-    teY = teY[0:config['ntest']]
+    trX = trX[0:config['ntrain']]/255
+    trY = trY[0:config['ntrain']]/255
+    teX = teX[0:config['ntest']]/255
+    teY = teY[0:config['ntest']]/255
     print "*** final training data :", trX.shape, trY.shape
     print "*** final test data :", teX.shape, teY.shape
     print "data loaded..."
