@@ -12,7 +12,7 @@ import cPickle as pickle
 from load_data import load_cifar_10_data
 import lib as l
 from theano.tensor.nnet import conv2d
-from theano.tensor.signal.downsample import max_pool_2d
+from theano.tensor.signal.pool import pool_2d as max_pool_2d
 
 
 class conv_net:
@@ -85,6 +85,7 @@ class conv_net:
         #l6 = self.bn(l6, self.g,self.b,self.m,self.v)
         l6 = conv2d(l6, w_o, border_mode='valid')
         l6 = T.flatten(l6, outdim=2)
+        #l6 = self.bn(l6, self.g,self.b,self.m,self.v)
         pyx = T.nnet.softmax(l6)
         return l1, l2, l3, l4, l5, l6, pyx
 
@@ -105,6 +106,7 @@ class conv_net:
         trX, trY, teX, teY = self.trX, self.trY, self.teX, self.teY
         mbsize = self.config['mini_batch_size']
         for i in range(10):
+            print "epoch :",i
             for start, end in zip(range(0, len(trX), mbsize), range(mbsize, len(trX), mbsize)):
                 #print start, trY[start:end].shape
                 cost,grads,entropy = self.train(trX[start:end], trY[start:end])
@@ -112,7 +114,6 @@ class conv_net:
                 #print l1.shape, l2.shape, l3.shape, l4.shape, l5.shape, l6.shape
                 print cost
                 #exit(0)
-            print "epoch :",i
-            #print np.mean(teY== self.predict(teX))
+            print "validation accuracy:",np.mean(teY == self.predict(teX))
 
 
