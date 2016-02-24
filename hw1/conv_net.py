@@ -92,12 +92,11 @@ class conv_net:
         X, Y, w1, w2, w3, w4, w5, w6, w_o = self.X, self.Y, self.w1, self.w2, self.w3, self.w4, self.w5, self.w6, self.w_o
         l1, l2, l3, l4, l5, l6, py_x = self.model(X, w1, w2, w3, w4, w5, w6, w_o, 0., 0.)
         y_x = T.argmax(py_x, axis=1)
-        cost = T.mean(T.nnet.categorical_crossentropy(Y,py_x))
+        cost = T.mean(T.nnet.categorical_crossentropy(py_x, Y))
         params = [w1, w2, w3, w4, w5, w6, w_o]
         updates,grads = l.RMSprop(cost, params, lr=0.001)
-
-        self.train = theano.function(inputs=[X, Y], outputs=cost, updates=updates, allow_input_downcast=True)
-        self.predict = theano.function(inputs=[X], outputs=[l1, l2, l3, l4, l5, l6], allow_input_downcast=True)
+        self.train = theano.function(inputs=[X, Y], outputs=[cost,T.sum((grads)[0]),py_x], updates=updates, allow_input_downcast=True)
+        self.predict = theano.function(inputs=[X], outputs=y_x, allow_input_downcast=True)
         print "Done building the model..."
 
     def train(self):
@@ -105,14 +104,15 @@ class conv_net:
 
         trX, trY, teX, teY = self.trX, self.trY, self.teX, self.teY
         mbsize = self.config['mini_batch_size']
-        for i in range(2):
+        for i in range(10):
             for start, end in zip(range(0, len(trX), mbsize), range(mbsize, len(trX), mbsize)):
-                print start, trY[start:end].shape
-                cost = self.train(trX[start:end], trY[start:end])
-                l1, l2, l3, l4, l5, l6 = self.predict(trX[start:end])
-                print l1.shape, l2.shape, l3.shape, l4.shape, l5.shape, l6.shape
-
-                exit(0)
+                #print start, trY[start:end].shape
+                cost,grads,entropy = self.train(trX[start:end], trY[start:end])
+                #y_x, l1, l2, l3, l4, l5, l6 = self.predict(trX[start:end])
+                #print l1.shape, l2.shape, l3.shape, l4.shape, l5.shape, l6.shape
+                print cost
+                #exit(0)
             print "epoch :",i
+            #print np.mean(teY== self.predict(teX))
 
 

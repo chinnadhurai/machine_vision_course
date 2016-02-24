@@ -14,9 +14,9 @@ def get_config():
     config = {}
     config["dpath"]  = os.environ['DATAPATH']
     config["opath"]  = os.environ['OUTPUTPATH']
-    config["ntrain"] = 1000#95000 # max is 100000
+    config["ntrain"] = 200#95000 # max is 100000
     config["ntest"]  = 100#5000  # max is 10000
-    config["mini_batch_size"] = 2
+    config["mini_batch_size"] = 128
     return config
 
 
