@@ -10,6 +10,16 @@ from scipy import signal
 from PIL import Image
 import os
 
+
+
+def one_hot(x,n):
+	if type(x) == list:
+		x = np.array(x)
+	x = x.flatten()
+	o_h = np.zeros((len(x),n))
+	o_h[np.arange(len(x)),x] = 1
+	return o_h
+
 def unpickle(file):
     import cPickle
     fo = open(file, 'rb')
@@ -36,17 +46,18 @@ def load_cifar_10_data(config):
     data_dict = unpickle( config['dpath'] + file )
     trX = data_dict['data'].reshape(-1,3,32,32)
     trY = np.array(data_dict['labels'])
+    trY = one_hot(trY, 10)
     trX = np.concatenate((trX, mirror_image(trX)), axis=0)
-    trY = np.concatenate((trY, np.array(data_dict['labels'])), axis=0)
+    trY = np.concatenate((trY, one_hot(np.array(data_dict['labels']),10)), axis=0)
     #print "--training data :", file, trX.shape, trY.shape
 
     for file in os.listdir( config['dpath'] )[1:-1]:
         data_dict = unpickle( config['dpath'] + file )
         trdata = data_dict['data'].reshape(-1,3,32,32)
         trX = np.concatenate((trX, mirror_image(trdata)), axis=0)
-        trY = np.concatenate((trY, np.array(data_dict['labels'])), axis=0)
+        trY = np.concatenate((trY, one_hot(np.array(data_dict['labels']),10)), axis=0)
         trX = np.concatenate((trX, trdata), axis=0)
-        trY = np.concatenate((trY, np.array(data_dict['labels'])), axis=0)
+        trY = np.concatenate((trY, one_hot(np.array(data_dict['labels']),10)), axis=0)
         #print "--training data :", file, trX.shape, trY.shape
         i += 1
 
