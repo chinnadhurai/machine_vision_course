@@ -11,7 +11,7 @@ from PIL import Image
 import cPickle as pickle
 from load_data import load_cifar_10_data
 import lib as l
-from theano.tensor.nnet.conv import conv2d
+from theano.tensor.nnet import conv2d
 from theano.tensor.signal.downsample import max_pool_2d
 
 
@@ -94,10 +94,10 @@ class conv_net:
         y_x = T.argmax(py_x, axis=1)
         cost = T.mean(T.nnet.categorical_crossentropy(Y,py_x))
         params = [w1, w2, w3, w4, w5, w6, w_o]
-        updates = l.RMSprop(cost, params, lr=0.001)
+        updates,grads = l.RMSprop(cost, params, lr=0.001)
 
         self.train = theano.function(inputs=[X, Y], outputs=cost, updates=updates, allow_input_downcast=True)
-        self.predict = theano.function(inputs=[X], outputs=y_x, allow_input_downcast=True)
+        self.predict = theano.function(inputs=[X], outputs=[l1, l2, l3, l4, l5, l6], allow_input_downcast=True)
         print "Done building the model..."
 
     def train(self):
@@ -109,7 +109,10 @@ class conv_net:
             for start, end in zip(range(0, len(trX), mbsize), range(mbsize, len(trX), mbsize)):
                 print start, trY[start:end].shape
                 cost = self.train(trX[start:end], trY[start:end])
-                print cost
+                l1, l2, l3, l4, l5, l6 = self.predict(trX[start:end])
+                print l1.shape, l2.shape, l3.shape, l4.shape, l5.shape, l6.shape
+
+                exit(0)
             print "epoch :",i
 
 
