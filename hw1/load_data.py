@@ -75,9 +75,9 @@ def load_cifar_10_data(config):
         trX = np.concatenate((trX, mirror_image(trdata)), axis=0)
         trY = np.concatenate((trY, one_hot(np.array(data_dict['labels']),10)), axis=0)
         #print "--training data :", file, trX.shape, trY.shape
-        if i == 0:
-            convert_to_image(trdata[2],"normal1.jpg")
-            mirrod_image =  (mirror_image1(trdata))[2]
+        if 1 == 0:
+            convert_to_image(trdata[4],"normal1.jpg")
+            mirrod_image =  (mirror_image1(trdata))[4]
             print mirrod_image.shape
             convert_to_image(mirrod_image,"flipped1.jpg")
 

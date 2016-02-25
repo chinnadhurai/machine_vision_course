@@ -13,6 +13,7 @@ from load_data import load_cifar_10_data
 import lib as l
 from theano.tensor.nnet import conv2d
 from theano.tensor.signal.pool import pool_2d as max_pool_2d
+import sys
 
 
 class conv_net:
@@ -45,10 +46,8 @@ class conv_net:
         self.b_o = l.init_weights((10,))      #full-conn
 
         #batch_norm params
-        self.b = l.init_weights((1,1024))
-        self.g = l.init_weights((1,1024))
-        self.m = l.init_weights((1,1024))
-        self.v = l.init_weights((1,1024))
+        self.b =theano.shared(np.random.randn(1,10),broadcastable=(True,False))#l.init_weights((1,10))
+        self.g =theano.shared(np.random.randn(1,10),broadcastable=(True,False))#l.init_weights((1,10))
 
         print "Initializing and building conv_net"
 
@@ -84,17 +83,20 @@ class conv_net:
         #l6 = l.dropout(l6, p_drop_hidden)
         #l6 = self.bn(l6, self.g,self.b,self.m,self.v)
         l6 = conv2d(l6, w_o, border_mode='valid')
+        #l6 = self.bn(l6, self.g, self.b, T.mean(l6, axis=1), T.std(l6,axis=1))
         l6 = T.flatten(l6, outdim=2)
-        #l6 = self.bn(l6, self.g,self.b,self.m,self.v)
+        #l6 = ((l6 - T.mean(l6, axis=0))/T.std(l6,axis=0))*self.g + self.b#self.bn( l6, self.g,self.b,T.mean(l6, axis=0),T.std(l6,axis=0) )
+        l6 = ((l6 - T.mean(l6, axis=0))/T.std(l6,axis=0))*self.g + self.b
         pyx = T.nnet.softmax(l6)
         return l1, l2, l3, l4, l5, l6, pyx
 
     def build_model(self):
         X, Y, w1, w2, w3, w4, w5, w6, w_o = self.X, self.Y, self.w1, self.w2, self.w3, self.w4, self.w5, self.w6, self.w_o
+        g, b = self.g, self.b
         l1, l2, l3, l4, l5, l6, py_x = self.model(X, w1, w2, w3, w4, w5, w6, w_o, 0., 0.)
         y_x = T.argmax(py_x, axis=1)
         cost = T.mean(T.nnet.categorical_crossentropy(py_x, Y))
-        params = [w1, w2, w3, w4, w5, w6, w_o]
+        params = [w1, w2, w3, w4, w5, w6, w_o, g, b]
         updates,grads = l.RMSprop(cost, params, lr=0.001)
         self.train = theano.function(inputs=[X, Y], outputs=[cost,T.sum((grads)[0]),py_x], updates=updates, allow_input_downcast=True)
         self.predict = theano.function(inputs=[X], outputs=y_x, allow_input_downcast=True)
@@ -112,8 +114,9 @@ class conv_net:
                 cost,grads,entropy = self.train(trX[start:end], trY[start:end])
                 #y_x, l1, l2, l3, l4, l5, l6 = self.predict(trX[start:end])
                 #print l1.shape, l2.shape, l3.shape, l4.shape, l5.shape, l6.shape
-                print cost
+                sys.stdout.write('\r' + 'cost:'+ str(cost))
+                sys.stdout.flush()
                 #exit(0)
-            print "validation accuracy:",np.mean(teY == self.predict(teX))
+            print "\tvalidation accuracy:",np.mean(teY == self.predict(teX))
 
 
