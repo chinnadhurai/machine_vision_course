@@ -50,6 +50,8 @@ class conv_net:
         self.g =theano.shared(np.ones((1,10)),broadcastable=(True,False))#l.init_weights((1,10))
         self.r_m =theano.shared(np.zeros((1,10)),broadcastable=(True,False))#l.init_weights((1,10))
         self.r_s =theano.shared(np.zeros((1,10)),broadcastable=(True,False))#l.init_weights((1,10))
+        self.params_to_pickle = [self.w1, self.w2, self.w3, self.w4, self.w5, self.w6, self.w_o]
+        self.params_to_pickle.append([self.b1,self.b2,self.b3,self.b4,self.b5,self.b6,self.r_m, self.r_s])
         print "Initializing and building conv_net"
 
     def bn(self, inputs, gamma, beta, mean, std):
@@ -157,7 +159,7 @@ class conv_net:
                 #l.print_overwrite("gamma :",self.g.get_value()[0])
                 #l.print_overwrite("running mean",  (self.r_m).get_value())
                 #exit(0)
-            print "\ttrain accracy :", np.mean(np.argmax(trY, axis=1) == self.predict(trX))
+            print "\ttrain accracy :", np.mean(np.argmax(trY[:5000], axis=1) == self.predict(trX[:5000]))
             print "\tvalidation accuracy : ",np.mean(teY == self.predict(teX))
-
+	l.dump_params_pickle(self.config['opath']+'model.zip',params_to_pickle)
 

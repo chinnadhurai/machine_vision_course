@@ -4,7 +4,7 @@ import theano
 from theano import tensor as T
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 import numpy as np
-
+from theano.misc.pkl_utils import dump
 
 
 srng = RandomStreams()
@@ -45,3 +45,8 @@ def print_overwrite(string,val):
     import sys
     sys.stdout.write('\r' + string + str(val))
     sys.stdout.flush()
+
+def dump_params_pickle(file,params_to_pickle):
+     with open(file, 'wb') as f:
+         for p in params_to_pickle:
+            dump(p, f)
