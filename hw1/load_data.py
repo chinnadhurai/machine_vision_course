@@ -91,7 +91,6 @@ def load_cifar_10_data(config):
     #print "--test data :", file, teX.shape, teY.shape
     slices = np.arange(config['ntrain'])
     np.random.shuffle(slices)
-    print slices[:10]
     trX = trX[slices]
     trY = trY[slices]
     teX = teX[0:config['ntest']]
