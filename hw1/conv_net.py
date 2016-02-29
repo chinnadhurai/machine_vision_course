@@ -91,7 +91,7 @@ class conv_net:
         pyx = T.nnet.softmax(l6)
         return l1, l2, l3, l4, l5, l6, pyx
 
-    def update_running_mean_std(self, updates, i_m, i_s, a = 0.5):
+    def update_running_mean_std(self, updates, i_m, i_s, a = 0.99):
         updates.append((self.r_m, a*self.r_m + (1-a)*i_m ))
         updates.append((self.r_s, a*self.r_s + (1-a)*i_s ))
 
@@ -122,7 +122,7 @@ class conv_net:
         #l6 = self.bn(l6, self.g, self.b, T.mean(l6, axis=1), T.std(l6,axis=1))
         l6 = T.flatten(l6, outdim=2)
         #l6 = ((l6 - T.mean(l6, axis=0))/T.std(l6,axis=0))*self.g + self.b#self.bn( l6, self.g,self.b,T.mean(l6, axis=0),T.std(l6,axis=0) )
-        l6 = ((l6 - self.r_m)/self.r_s + 1e-4)*self.g + self.b
+        l6 = ((l6 - self.r_m)/(self.r_s + 1e-4))*self.g + self.b
         pyx = T.nnet.softmax(l6)
         return pyx
 
