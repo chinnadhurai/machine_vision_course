@@ -161,5 +161,5 @@ class conv_net:
                 #exit(0)
             print "\ttrain accracy :", np.mean(np.argmax(trY[:5000], axis=1) == self.predict(trX[:5000]))
             print "\tvalidation accuracy : ",np.mean(teY == self.predict(teX))
-	l.dump_params_pickle(self.config['opath']+'model.zip',params_to_pickle)
+	l.dump_params_pickle(self.config['opath']+'model.zip',self.params_to_pickle)
 
