@@ -146,7 +146,7 @@ class conv_net:
 
         trX, trY, teX, teY = self.trX, self.trY, self.teX, self.teY
         mbsize = self.config['mini_batch_size']
-        for i in range(10):
+        for i in range(20):
             print "epoch :",i
             for start, end in zip(range(0, len(trX), mbsize), range(mbsize, len(trX), mbsize)):
                 #print start, trY[start:end].shape
