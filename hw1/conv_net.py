@@ -14,7 +14,7 @@ import lib as l
 from theano.tensor.nnet import conv2d
 from theano.tensor.signal.pool import pool_2d as max_pool_2d
 import sys
-
+from scipy.misc import imread
 
 class conv_net:
     def __init__(self, config):
@@ -50,8 +50,8 @@ class conv_net:
         self.g =theano.shared(np.ones((1,10)),broadcastable=(True,False))#l.init_weights((1,10))
         self.r_m =theano.shared(np.zeros((1,10)),broadcastable=(True,False))#l.init_weights((1,10))
         self.r_s =theano.shared(np.zeros((1,10)),broadcastable=(True,False))#l.init_weights((1,10))
-        self.params_to_pickle = [self.w1, self.w2, self.w3, self.w4, self.w5, self.w6, self.w_o]
-        self.params_to_pickle.append([self.b1,self.b2,self.b3,self.b4,self.b5,self.b6,self.r_m, self.r_s])
+        self.params_to_pickle = [self.w1, self.w2, self.w3, self.w4, self.w5, self.w6, self.w_o, self.b1,self.b2,self.b3,self.b4,self.b5,self.b6,self.r_m, self.r_s,self.g,self.b]
+
         print "Initializing and building conv_net"
 
     def bn(self, inputs, gamma, beta, mean, std):
@@ -148,7 +148,7 @@ class conv_net:
 
         trX, trY, teX, teY = self.trX, self.trY, self.teX, self.teY
         mbsize = self.config['mini_batch_size']
-        for i in range(20):
+        for i in range(3):
             print "epoch :",i
             for start, end in zip(range(0, len(trX), mbsize), range(mbsize, len(trX), mbsize)):
                 #print start, trY[start:end].shape
@@ -161,5 +161,45 @@ class conv_net:
                 #exit(0)
             print "\ttrain accracy :", np.mean(np.argmax(trY[:5000], axis=1) == self.predict(trX[:5000]))
             print "\tvalidation accuracy : ",np.mean(teY == self.predict(teX))
-	l.dump_params_pickle(self.config['opath']+'model.zip',self.params_to_pickle)
+	    l.dump_params_pickle(self.config["pickle_file_location"],self.params_to_pickle)
+
+    def test_model_for_bigger_image(self,X, w1,w2,w3,w4,w5,w6,w_o,b1,b2,b3,b4,b5,b6,r_m,r_s,g,b ):
+        l1a = l.rectify(conv2d(X, w1, border_mode='valid') + b1)
+        l1 = max_pool_2d(l1a, (2, 2), ignore_border=True)
+
+
+        l2a = l.rectify(conv2d(l1, w2,border_mode='valid') + b2)
+        l2 = max_pool_2d(l2a, (2, 2), ignore_border=True)
+
+        l3 = l.rectify(conv2d(l2, w3, border_mode='valid') + b3)
+
+        l4a = l.rectify(conv2d(l3, w4, border_mode='valid') + b4)
+        l4 = max_pool_2d(l4a, (2, 2), ignore_border=True)
+
+        l5 = l.rectify(conv2d(l4, w5, border_mode='valid') + b5)
+
+        l6 = l.rectify(conv2d(l5, w6, border_mode='valid') + b6)
+        l6a = conv2d(l6, w_o, border_mode='valid')
+        #l6 = T.flatten(l6, outdim=2)
+        l6 = T.max(l6a,axis=(2,3),keepdims=False)
+        #l6 = T.max(l6,axis=2,keepdims=False)
+        l6 = ((l6 - r_m)/(r_s + 1e-4))*g + b
+
+        pyx = T.nnet.softmax(l6)
+        return pyx, l6, l6a
+
+    def load_model(self):
+        w1,w2,w3,w4,w5,w6,w_o,b1,b2,b3,b4,b5,b6,r_m,r_s,g,b = l.load_params_pickle(self.config["pickle_file_location"])
+        py_x,l6,l6a = self.test_model_for_bigger_image(self.X, w1,w2,w3,w4,w5,w6,w_o,b1,b2,b3,b4,b5,b6,r_m,r_s,g,b )
+        y_x = T.argmax(py_x, axis=1)
+        self.predict = theano.function(inputs=[self.X], outputs=[y_x,l6,l6a], allow_input_downcast=True)
+
+    def q2(self,im):
+        self.load_model()
+        dpath = self.config["output_images_location"]
+        y_x,l6,l6a = self.predict(im)
+        for i in np.arange(l6.shape[1]):
+            print "max value :", i, max(l6a[0,i].flatten())
+            smooth_image = l.add_gnoise_util(l6a[0,i])
+            l.convert_to_image(smooth_image,dpath+"fig_"+str(i)+".jpg")
 
