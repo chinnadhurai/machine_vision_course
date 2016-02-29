@@ -89,9 +89,11 @@ def load_cifar_10_data(config):
     teX = data_dict['data'].reshape(-1,3,32,32)
     teY = np.array(data_dict['labels'])
     #print "--test data :", file, teX.shape, teY.shape
-
-    trX = trX[0:config['ntrain']]
-    trY = trY[0:config['ntrain']]
+    slices = np.arange(config['ntrain'])
+    np.random.shuffle(slices)
+    print slices[:10]
+    trX = trX[slices]
+    trY = trY[slices]
     teX = teX[0:config['ntest']]
     teY = teY[0:config['ntest']]
     print "*** final training data :", trX.shape, trY.shape
