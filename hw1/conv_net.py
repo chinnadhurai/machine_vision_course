@@ -152,8 +152,8 @@ class conv_net:
                 #print start, trY[start:end].shape
                 cost,grads,entropy = self.train(trX[start:end], trY[start:end])
                 #y_x, l1, l2, l3, l4, l5, l6 = self.predict(trX[start:end])
-                print entropy.shape
-                #l.print_overwrite("cost : ",cost)
+                #print entropy.shape
+                l.print_overwrite("cost : ",cost)
                 #l.print_overwrite("gamma :",self.g.get_value()[0])
                 #l.print_overwrite("running mean",  (self.r_m).get_value())
                 #exit(0)
