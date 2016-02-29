@@ -157,6 +157,7 @@ class conv_net:
                 #l.print_overwrite("gamma :",self.g.get_value()[0])
                 #l.print_overwrite("running mean",  (self.r_m).get_value())
                 #exit(0)
-            print "\tvalidation accuracy:",np.mean(teY == self.predict(teX))
+            print "\ttrain accracy :", np.mean(np.argmax(trY, axis=1) == self.predict(trX))
+            print "\tvalidation accuracy : ",np.mean(teY == self.predict(teX))
 
 
