@@ -41,3 +41,7 @@ def RMSprop(cost, params, lr=0.001, rho=0.9, epsilon=1e-6):
         updates.append((p, p - lr * g))
     return updates,grads
 
+def print_overwrite(string,val):
+    import sys
+    sys.stdout.write('\r' + string + str(val))
+    sys.stdout.flush()
