@@ -90,10 +90,10 @@ def load_cifar_10_data(config):
     teY = np.array(data_dict['labels'])
     #print "--test data :", file, teX.shape, teY.shape
 
-    trX = trX[0:config['ntrain']]/255
-    trY = trY[0:config['ntrain']]/255
-    teX = teX[0:config['ntest']]/255
-    teY = teY[0:config['ntest']]/255
+    trX = trX[0:config['ntrain']]
+    trY = trY[0:config['ntrain']]
+    teX = teX[0:config['ntest']]
+    teY = teY[0:config['ntest']]
     print "*** final training data :", trX.shape, trY.shape
     print "*** final test data :", teX.shape, teY.shape
     print "data loaded..."
