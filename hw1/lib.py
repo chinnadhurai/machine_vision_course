@@ -7,7 +7,7 @@ import numpy as np
 from theano.misc.pkl_utils import dump
 from theano.misc.pkl_utils import load
 from scipy.misc import imread
-import matplotlib.pyplot as plt
+from PIL import Image
 
 srng = RandomStreams()
 
@@ -72,16 +72,19 @@ def get_kernel(shape=(3,3),sigma=0.5):
     return h
 
 def convert_to_image(image, name):
-    plt.imshow(image, interpolation='none')
-    plt.savefig(name)
+    import matplotlib
+    matplotlib.use('Agg') # Must be before importing matplotlib.pyplot or pylab!
+    import matplotlib.pyplot as plt
+    #plt.imshow(image, interpolation='none')
+    #plt.savefig(name)
     print "saving file : ",name
-    #a = (image*255).astype('uint8')
-    #im = Image.fromarray(a)
-    #im.save(name)
+    a = (255*image).astype('uint8')
+    im = Image.fromarray(a)
+    im.save(name)
 
 def add_gnoise_util(image):
     from scipy import signal
-    kernel = get_kernel(shape=(10,10),sigma=3)
+    kernel = get_kernel(shape=(10,10),sigma=5)
     image   = signal.convolve2d(image, kernel, boundary='fill', fillvalue=0,mode='same')
     #print(image.shape)
     return image

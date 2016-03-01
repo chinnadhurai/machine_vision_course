@@ -148,7 +148,7 @@ class conv_net:
 
         trX, trY, teX, teY = self.trX, self.trY, self.teX, self.teY
         mbsize = self.config['mini_batch_size']
-        for i in range(3):
+        for i in range(25):
             print "epoch :",i
             for start, end in zip(range(0, len(trX), mbsize), range(mbsize, len(trX), mbsize)):
                 #print start, trY[start:end].shape
@@ -199,7 +199,9 @@ class conv_net:
         dpath = self.config["output_images_location"]
         y_x,l6,l6a = self.predict(im)
         for i in np.arange(l6.shape[1]):
-            print "max value :", i, max(l6a[0,i].flatten())
-            smooth_image = l.add_gnoise_util(l6a[0,i])
+	    p_im = l6a[0,i] / (sum(l6a[0,i].flatten())) 
+            p_im = (p_im - np.average(p_im))/np.std(p_im)
+            print "max value :", i, max(p_im.flatten())
+            smooth_image = l.add_gnoise_util(p_im)
             l.convert_to_image(smooth_image,dpath+"fig_"+str(i)+".jpg")
 

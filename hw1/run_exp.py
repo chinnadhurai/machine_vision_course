@@ -21,7 +21,7 @@ def get_config():
     config["ntest"]  = 10000  # max is 10000
     config["mini_batch_size"] = 32
     config["pickle_file_location"] = config['opath']+'model.zip'
-    config["output_images_location"] = config['opath']
+    config["output_images_location"] = config['opath'] + 'figs/'
     return config
 
 def get_image():
