@@ -13,12 +13,12 @@ import os
 
 
 def one_hot(x,n):
-	if type(x) == list:
-		x = np.array(x)
-	x = x.flatten()
-	o_h = np.zeros((len(x),n))
-	o_h[np.arange(len(x)),x] = 1
-	return o_h
+    if type(x) == list:
+        x = np.array(x)
+    x = x.flatten()
+    o_h = np.zeros((len(x),n))
+    o_h[np.arange(len(x)),x] = 1
+    return o_h
 
 def unpickle(file):
     import cPickle
@@ -52,28 +52,26 @@ def convert_to_image(image, name):
     im.save(name)
 
 def load_cifar_10_data(config):
-    print "loading data from", config['dpath']
-    trX = []
-    trY = []
+    print "loading data from", config['cifar10_path']
     i = 0
     # training data
 
-    file = os.listdir( config['dpath'] )[0]
-    data_dict = unpickle( config['dpath'] + file )
+    file = os.listdir( config['cifar10_path'] )[0]
+    data_dict = unpickle( config['cifar10_path'] + file )
     trX = data_dict['data'].reshape(-1,3,32,32)
     trY = np.array(data_dict['labels'])
-    trY = one_hot(trY, 10)
-    trX = np.concatenate((trX, mirror_image(trX)), axis=0)
-    trY = np.concatenate((trY, one_hot(np.array(data_dict['labels']),10)), axis=0)
-    #print "--training data :", file, trX.shape, trY.shape
+    if config['data_augment']:
+        trX = np.concatenate((trX, mirror_image(trX)), axis=0)
+        trY = np.concatenate((trY, np.array(data_dict['labels'])), axis=0)
 
-    for file in os.listdir( config['dpath'] )[1:-1]:
-        data_dict = unpickle( config['dpath'] + file )
+    for file in os.listdir( config['cifar10_path'] )[1:-1]:
+        data_dict = unpickle( config['cifar10_path'] + file )
         trdata = data_dict['data'].reshape(-1,3,32,32)
         trX = np.concatenate((trX, trdata), axis=0)
-        trY = np.concatenate((trY, one_hot(np.array(data_dict['labels']),10)), axis=0)
-        trX = np.concatenate((trX, mirror_image(trdata)), axis=0)
-        trY = np.concatenate((trY, one_hot(np.array(data_dict['labels']),10)), axis=0)
+        trY = np.concatenate((trY, np.array(data_dict['labels'])), axis=0)
+        if config['data_augment']:
+	    trX = np.concatenate((trX, mirror_image(trdata)), axis=0)
+            trY = np.concatenate((trY, np.array(data_dict['labels'])), axis=0)
         #print "--training data :", file, trX.shape, trY.shape
         if 1 == 0:
             convert_to_image(trdata[4],"normal1.jpg")
@@ -83,19 +81,57 @@ def load_cifar_10_data(config):
 
         i += 1
 
-    #test data
-    file = os.listdir( config['dpath'] )[-1]
-    data_dict = unpickle( config['dpath'] + file )
-    teX = data_dict['data'].reshape(-1,3,32,32)
-    teY = np.array(data_dict['labels'])
-    #print "--test data :", file, teX.shape, teY.shape
-    slices = np.arange(config['ntrain'])
+    slices = np.arange(50000)
+    np.random.shuffle(slices)
+    train_slices = slices[:config['ntrain_cifar10']]
+    test_slices = slices[config['ntrain_cifar10']:]
+    teX = trX[test_slices]
+    teY = trY[test_slices]
+    trX = trX[train_slices]
+    trY = trY[train_slices]
+    trY = one_hot(trY,10)
+    print "*** final training data :", trX.shape, trY.shape
+    print "*** final test data :", teX.shape, teY.shape
+    print "CIFAR-10 data loaded..."
+    return trX,trY,teX,teY
+
+def load_cifar_100_data(config):
+    dir        =  config['cifar100_path']
+    print "loading data from", dir
+    test_file  = os.listdir(dir)[0]
+    train_file = os.listdir(dir)[1]	
+    test_dict  = unpickle( dir  + test_file )
+    train_dict = unpickle( dir  + train_file )
+    trX = train_dict['data'].reshape(-1,3,32,32)
+    teX = test_dict['data'].reshape(-1,3,32,32)
+    if config['fine_labels']:
+        nlabels = 100
+        label_key = 'fine_labels'
+        trY = train_dict['fine_labels']
+        trY = one_hot(trY,nlabels)
+        teY = test_dict['fine_labels']
+        teY = one_hot(teY,nlabels)
+    else:
+        nlabels = 20
+        label_key = 'coarse_labels'
+        trY = train_dict['coarse_labels']
+        trY = one_hot(trY,nlabels)
+        teY = test_dict['coarse_labels']
+        teY = one_hot(teY,nlabels)
+
+    trY = train_dict[label_key]
+    trY = one_hot(trY,nlabels)
+    teY = test_dict[label_key]
+    teY = one_hot(teY,nlabels)
+    
+    slices = np.arange(config['ntrain_cifar100'])
     np.random.shuffle(slices)
     trX = trX[slices]
     trY = trY[slices]
-    teX = teX[0:config['ntest']]
-    teY = teY[0:config['ntest']]
+    teX = teX[0:config['ntest_cifar100']]
+    teY = teY[0:config['ntest_cifar100']]
     print "*** final training data :", trX.shape, trY.shape
     print "*** final test data :", teX.shape, teY.shape
-    print "data loaded..."
-    return trX,trY,teX,teY
+    print "CIFAR-100 data loaded..."
+    return trX,trY,teX,teY	
+	

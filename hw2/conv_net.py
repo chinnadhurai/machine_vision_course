@@ -21,9 +21,11 @@ class conv_net:
     def __init__(self, config):
         self.config = config
         print "Experiment Configuration:"
-        print "Num training examples    : ", config["ntrain"]
-        print "Num test examples        : ", config["ntest"]
-        print "Minibatch size           : ", config["mini_batch_size"]
+        print "Num cifar-10 training examples       : ", config["ntrain_cifar10"]
+        print "Num cifar-10 test examples           : ", config["ntest_cifar10"]
+        print "Num cifar-100 training examples      : ", config["ntrain_cifar100"]
+        print "Num cifar-100 test examples          : ", config["ntest_cifar100"]
+        print "Minibatch size                       : ", config["mini_batch_size"]
         self.trX, self.trY, self.teX, self.teY = load_cifar_10_data(config)
         self.X = T.ftensor4()
         self.Y = T.fmatrix()
@@ -38,19 +40,19 @@ class conv_net:
         self.w6  = l.init_weights((1024,1024,1,1))    #full-conn
         self.w_o = l.init_weights((10,1024,1,1))      #full-conn
 
-        self.b1  = theano.shared(np.asarray(np.zeros((1,64,1,1)), dtype=theano.config.floatX),broadcastable=(True,False,True,True))#l.init_weights((1,64,1,1))      #conv
-        self.b2  = theano.shared(np.asarray(np.zeros((1,128,1,1)), dtype=theano.config.floatX),broadcastable=(True,False,True,True))#l.init_weights((128,))    #conv
-        self.b3  = theano.shared(np.asarray(np.zeros((1,256,1,1)), dtype=theano.config.floatX),broadcastable=(True,False,True,True))#l.init_weights((256,))   #conv
-        self.b4  = theano.shared(np.asarray(np.zeros((1,256,1,1)), dtype=theano.config.floatX),broadcastable=(True,False,True,True))#l.init_weights((256,))   #conv
-        self.b5  = theano.shared(np.asarray(np.zeros((1,1024,1,1)), dtype=theano.config.floatX),broadcastable=(True,False,True,True))#l.init_weights((1024,))     #full-conn
-        self.b6  = theano.shared(np.asarray(np.zeros((1,1024,1,1)), dtype=theano.config.floatX),broadcastable=(True,False,True,True))#l.init_weights((1024,))    #full-conn
-        self.b_o = l.init_weights((10,))      #full-conn
+        self.b1  = theano.shared(np.asarray(np.zeros((1,64,1,1)), dtype=theano.config.floatX),broadcastable=(True,False,True,True))
+        self.b2  = theano.shared(np.asarray(np.zeros((1,128,1,1)), dtype=theano.config.floatX),broadcastable=(True,False,True,True))
+        self.b3  = theano.shared(np.asarray(np.zeros((1,256,1,1)), dtype=theano.config.floatX),broadcastable=(True,False,True,True))
+        self.b4  = theano.shared(np.asarray(np.zeros((1,256,1,1)), dtype=theano.config.floatX),broadcastable=(True,False,True,True))
+        self.b5  = theano.shared(np.asarray(np.zeros((1,1024,1,1)), dtype=theano.config.floatX),broadcastable=(True,False,True,True))
+        self.b6  = theano.shared(np.asarray(np.zeros((1,1024,1,1)), dtype=theano.config.floatX),broadcastable=(True,False,True,True))
+        self.b_o = l.init_weights((10,))      
 
         #batch_norm params
-        self.b =theano.shared(np.zeros((1,10)),broadcastable=(True,False))#l.init_weights((1,10))
-        self.g =theano.shared(np.ones((1,10)),broadcastable=(True,False))#l.init_weights((1,10))
-        self.r_m =theano.shared(np.zeros((1,10)),broadcastable=(True,False))#l.init_weights((1,10))
-        self.r_s =theano.shared(np.zeros((1,10)),broadcastable=(True,False))#l.init_weights((1,10))
+        self.b =theano.shared(np.zeros((1,10)),broadcastable=(True,False))
+        self.g =theano.shared(np.ones((1,10)),broadcastable=(True,False))
+        self.r_m =theano.shared(np.zeros((1,10)),broadcastable=(True,False))
+        self.r_s =theano.shared(np.zeros((1,10)),broadcastable=(True,False))
         self.params_to_pickle = [self.w1, self.w2, self.w3, self.w4, self.w5, self.w6, self.w_o, self.b1,self.b2,self.b3,self.b4,self.b5,self.b6,self.r_m, self.r_s,self.g,self.b]
 
         print "Initializing and building conv_net"
@@ -66,30 +68,20 @@ class conv_net:
     def model(self, X, w1, w2, w3, w4, w5, w6,w_o, p_drop_conv, p_drop_hidden):
         l1a = l.rectify(conv2d(X, w1, border_mode='valid') + self.b1)
         l1 = max_pool_2d(l1a, (2, 2), ignore_border=True)
-        #l1 = l.dropout(l1, p_drop_conv)
-
+        
         l2a = l.rectify(conv2d(l1, w2,border_mode='valid') + self.b2)
         l2 = max_pool_2d(l2a, (2, 2), ignore_border=True)
-        #l2 = l.dropout(l2, p_drop_conv)
 
         l3 = l.rectify(conv2d(l2, w3, border_mode='valid') + self.b3)
-        #l3 = l.dropout(l3a, p_drop_conv)
 
         l4a = l.rectify(conv2d(l3, w4, border_mode='valid') + self.b4)
         l4 = max_pool_2d(l4a, (2, 2), ignore_border=True)
-        #l4 = T.flatten(l4, outdim=2)
-        #l4 = l.dropout(l4, p_drop_conv)
-
+        
         l5 = l.rectify(conv2d(l4, w5, border_mode='valid') + self.b5)
-        #l5 = l.dropout(l5, p_drop_hidden)
-
+       
         l6 = l.rectify(conv2d(l5, w6, border_mode='valid') + self.b6)
-        #l6 = l.dropout(l6, p_drop_hidden)
-        #l6 = self.bn(l6, self.g,self.b,self.m,self.v)
         l6 = conv2d(l6, w_o, border_mode='valid')
-        #l6 = self.bn(l6, self.g, self.b, T.mean(l6, axis=1), T.std(l6,axis=1))
         l6 = T.flatten(l6, outdim=2)
-        #l6 = ((l6 - T.mean(l6, axis=0))/T.std(l6,axis=0))*self.g + self.b#self.bn( l6, self.g,self.b,T.mean(l6, axis=0),T.std(l6,axis=0) )
         l6 = ((l6 - T.mean(l6, axis=0))/(T.std(l6,axis=0)+1e-4))*self.g + self.b
         pyx = T.nnet.softmax(l6)
         return l1, l2, l3, l4, l5, l6, pyx
@@ -101,30 +93,20 @@ class conv_net:
     def test_model(self, X, w1, w2, w3, w4, w5, w6,w_o, p_drop_conv, p_drop_hidden):
         l1a = l.rectify(conv2d(X, w1, border_mode='valid') + self.b1)
         l1 = max_pool_2d(l1a, (2, 2), ignore_border=True)
-        #l1 = l.dropout(l1, p_drop_conv)
 
         l2a = l.rectify(conv2d(l1, w2,border_mode='valid') + self.b2)
         l2 = max_pool_2d(l2a, (2, 2), ignore_border=True)
-        #l2 = l.dropout(l2, p_drop_conv)
 
         l3 = l.rectify(conv2d(l2, w3, border_mode='valid') + self.b3)
-        #l3 = l.dropout(l3a, p_drop_conv)
 
         l4a = l.rectify(conv2d(l3, w4, border_mode='valid') + self.b4)
         l4 = max_pool_2d(l4a, (2, 2), ignore_border=True)
-        #l4 = T.flatten(l4, outdim=2)
-        #l4 = l.dropout(l4, p_drop_conv)
 
         l5 = l.rectify(conv2d(l4, w5, border_mode='valid') + self.b5)
-        #l5 = l.dropout(l5, p_drop_hidden)
 
         l6 = l.rectify(conv2d(l5, w6, border_mode='valid') + self.b6)
-        #l6 = l.dropout(l6, p_drop_hidden)
-        #l6 = self.bn(l6, self.g,self.b,self.m,self.v)
         l6 = conv2d(l6, w_o, border_mode='valid')
-        #l6 = self.bn(l6, self.g, self.b, T.mean(l6, axis=1), T.std(l6,axis=1))
         l6 = T.flatten(l6, outdim=2)
-        #l6 = ((l6 - T.mean(l6, axis=0))/T.std(l6,axis=0))*self.g + self.b#self.bn( l6, self.g,self.b,T.mean(l6, axis=0),T.std(l6,axis=0) )
         l6 = ((l6 - self.r_m)/(self.r_s + 1e-4))*self.g + self.b
         pyx = T.nnet.softmax(l6)
         return pyx
@@ -149,7 +131,7 @@ class conv_net:
 
         trX, trY, teX, teY = self.trX, self.trY, self.teX, self.teY
         mbsize = self.config['mini_batch_size']
-        for i in range(45):
+        for i in range(self.config['epochs']):
             print "epoch :",i
             for start, end in zip(range(0, len(trX), mbsize), range(mbsize, len(trX), mbsize)):
                 #print start, trY[start:end].shape
@@ -160,10 +142,13 @@ class conv_net:
                 #l.print_overwrite("gamma :",self.g.get_value()[0])
                 #l.print_overwrite("running mean",  (self.r_m).get_value())
                 #exit(0)
-            print "\ttrain accracy :", np.mean(np.argmax(trY[:5000], axis=1) == self.predict(trX[:5000]))
-            print "\tvalidation accuracy : ",np.mean(teY == self.predict(teX))
+            print "\ttrain accracy :", np.mean(np.argmax(trY[:5000], axis=1) == self.predict(trX[:5000])) \
+            ,"\tvalidation accuracy : ",np.mean(teY[:10000] == self.predict(teX[:10000]))
 	    l.dump_params_pickle(self.config["pickle_file_location"],self.params_to_pickle)
 
+    #============================================================
+    # QUESTION -2
+    #============================================================
     def test_model_for_bigger_image(self,X, w1,w2,w3,w4,w5,w6,w_o,b1,b2,b3,b4,b5,b6,r_m,r_s,g,b ):
         l1a = l.rectify(conv2d(X, w1, border_mode='valid') + b1)
         l1 = max_pool_2d(l1a, (2, 2), ignore_border=True)
@@ -181,9 +166,7 @@ class conv_net:
 
         l6 = l.rectify(conv2d(l5, w6, border_mode='valid') + b6)
         l6a = conv2d(l6, w_o, border_mode='valid')
-        #l6 = T.flatten(l6, outdim=2)
         l6 = T.max(l6a,axis=(2,3),keepdims=False)
-        #l6 = T.max(l6,axis=2,keepdims=False)
         l6 = ((l6 - r_m)/(r_s + 1e-4))*g + b
 
         pyx = T.nnet.softmax(l6)
