@@ -8,7 +8,7 @@ from theano.misc.pkl_utils import dump
 from theano.misc.pkl_utils import load
 from scipy.misc import imread
 from PIL import Image
-
+import os
 srng = RandomStreams()
 
 def floatX(X):
@@ -88,3 +88,12 @@ def add_gnoise_util(image):
     image   = signal.convolve2d(image, kernel, boundary='fill', fillvalue=0,mode='same')
     #print(image.shape)
     return image
+
+def get_dir(home_dir,arg):
+    final_dir=os.path.join(home_dir,arg)
+    if not os.path.exists(final_dir):
+        os.makedirs(final_dir)
+    return final_dir
+
+def get_file(dir_name, filename):
+    return os.path.join(dir_name, filename)

@@ -2,7 +2,6 @@ __author__ = 'chinna'
 import theano
 from theano import tensor as T
 import numpy as np
-import matplotlib.pyplot as plt
 from theano import shared
 from theano import function
 import scipy as sp
@@ -27,6 +26,7 @@ class conv_net:
         print "Num cifar-100 test examples          : ", config["ntest_cifar100"]
         print "Minibatch size                       : ", config["mini_batch_size"]
         print "Using fine labels                    : ", config["fine_labels"]
+        print "Joing learning                       : ", config["transfer_learning"]
         print "Alpha                                : ", config["alpha"]
         self.trX10, self.trY10, self.teX10, self.teY10 = load_cifar_10_data(config)
         self.trX100, self.trY100, self.teX100, self.teY100 = load_cifar_100_data(config)
@@ -122,7 +122,7 @@ class conv_net:
         params = [w1, w2, w3, w4, w5, w6, w_o, g, b, b1, b2, b3, b4, b5, b6]
         updates,grads = l.RMSprop(cost, params, lr=0.01)
         self.update_running_mean_std(updates,r_m,r_s,T.mean(l6, axis=0), T.std(l6,axis=0))
-        train = theano.function(inputs=[X, Y], outputs=[cost,T.sum((grads)[0])], updates=updates, allow_input_downcast=True)
+        train = theano.function(inputs=[X, Y], outputs=cost, updates=updates, allow_input_downcast=True)
         py_x = self.test_model(X, w1, w2, w3, w4, w5, w6, w_o, r_m, r_s, g, b)
         y_x = T.argmax(py_x, axis=1)
         predict = theano.function(inputs=[X], outputs=y_x, allow_input_downcast=True)
@@ -134,16 +134,48 @@ class conv_net:
         trX10, trY10, teX10, teY10 = self.trX10, self.trY10, self.teX10, self.teY10
         trX100, trY100, teX100, teY100 = self.trX100, self.trY100, self.teX100, self.teY100
         mbsize = self.config['mini_batch_size']
+        c10_zip   = zip(range(0, len(trX10), mbsize), range(mbsize, len(trX10), mbsize))
+        c100_zip  = zip(range(0, len(trX100), mbsize), range(mbsize, len(trX100), mbsize))
+        total_len = len(c10_zip) + len(c100_zip)
+        c10_cost = []
+        if self.config["transfer_learning"] == False:
+            total_len = len(c10_zip)
+            c100_zip = []
         for i in range(self.config['epochs']):
             print "epoch :",i
-            for start, end in zip(range(0, len(trX10), mbsize), range(mbsize, len(trX10), mbsize)):
-                cost,grads = self.train_cifar10(trX10[start:end], trY10[start:end])
-                l.print_overwrite("cost : ",cost)
-            for start, end in zip(range(0, len(trX100), mbsize), range(mbsize, len(trX100), mbsize)):
-                cost,grads = self.train_cifar100(trX100[start:end], trY100[start:end])
-                l.print_overwrite("cost : ",cost)
+            c10_itr,c100_itr,t_itr = 0,0,0 
+            while t_itr < total_len:
+                if c10_itr < len(c10_zip):
+                     start, end = c10_zip[c10_itr]
+                     cost = self.train_cifar10(trX10[start:end], trY10[start:end])
+                     l.print_overwrite("cost : ",cost)
+                     t_itr += 1
+                     c10_itr += 1
+                if c100_itr < len(c100_zip):
+                     start, end = c100_zip[c100_itr]
+                     cost = self.train_cifar100(trX100[start:end], trY100[start:end])
+                     l.print_overwrite("cost : ",cost)
+                     t_itr += 1
+                     c100_itr += 1
+            cost10 = self.train_cifar10(trX10[:5000], trY10[:5000])
+            c10_cost.append(cost10/self.alpha) 
             print "\nCIFAR10 : train accracy :", np.mean(np.argmax(trY10[:5000], axis=1) == self.predict_cifar10(trX10[:5000])) \
-            ,"\tvalidation accuracy : ",np.mean(teY10[:10000] == self.predict_cifar10(teX10[:10000]))
-	    print "CIFAR100: train accracy :", np.mean(np.argmax(trY100[:5000], axis=1) == self.predict_cifar100(trX100[:5000])) \
-            ,"\tvalidation accuracy : ",np.mean(np.argmax(teY100[:10000],axis=1) == self.predict_cifar100(teX100[:10000]))
+            ,"  validation accuracy : ",np.mean(teY10[:10000] == self.predict_cifar10(teX10[:10000])) \
+            ,"  cost: ", cost10
+	    if self.config["transfer_learning"]:
+                print "CIFAR100: train accracy :", np.mean(np.argmax(trY100[:5000], axis=1) == self.predict_cifar100(trX100[:5000])) \
+                ,"  validation accuracy : ",np.mean(np.argmax(teY100[:10000],axis=1) == self.predict_cifar100(teX100[:10000])) \
+                ,"  cost: ", self.train_cifar100(trX100[:5000], trY100[:5000])
+        self.plot_cifar_10_cost(c10_cost)
 
+    def plot_cifar_10_cost(self,Y):
+        import matplotlib
+        matplotlib.use('Agg') # Must be before importing matplotlib.pyplot or pylab!
+        import matplotlib.pyplot as plt
+        plt.plot(Y,label='CIFAR-10 NLL')
+        plt.xlabel('Epochs')
+        plt.ylabel('CIFAR-10 NLL')
+        plt.suptitle('CIFAR-10 NLL vs iterations curve')
+        plt.savefig(self.config["plt_file"])
+        print "Saving plot to", self.config["plt_file"]
+        plt.close()

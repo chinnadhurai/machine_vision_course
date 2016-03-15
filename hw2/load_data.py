@@ -2,7 +2,6 @@ __author__ = 'chinna'
 import theano
 from theano import tensor as T
 import numpy as np
-import matplotlib.pyplot as plt
 from theano import shared
 from theano import function
 import scipy as sp
