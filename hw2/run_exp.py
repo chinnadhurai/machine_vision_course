@@ -31,6 +31,7 @@ def get_config():
     config["pickle_file_location"]      = config['opath']+'model.zip'
     config["output_images_location"]    = config['opath'] + 'figs/'
     config['epochs']                    = 45
+    config["alpha"]                     = 0.5
     return config
 
 def get_image():
