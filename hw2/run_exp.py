@@ -20,7 +20,7 @@ def get_config():
     config["opath"]                     = os.environ['OUTPUTPATH']
     config["cifar10_path"]              = config["dpath"] + "cifar10/"
     config["cifar100_path"]             = config["dpath"] + "cifar100/cifar-100-python/"
-    config["ntrain_cifar10"]            = 5000 	# max is 50000
+    config["ntrain_cifar10"]            = min(49000,int(sys.argv[2])) 	# max is 50000
     config["ntest_cifar10"]             = 50000 - config["ntrain_cifar10"]  	# max is 10000
     config["data_augment"]              = False
     config["transfer_learning"]         = True
