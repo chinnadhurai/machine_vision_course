@@ -13,7 +13,9 @@ from scipy.misc import imread
 import sys
 import load_data as l
 import lib 
-
+import vgg_16
+from q2 import conv_classifier_type
+ 
 def get_config(is_transfer_learning):
     config = {}
     config["dpath"]                     = os.environ['DATAPATH']
@@ -37,18 +39,27 @@ def get_config(is_transfer_learning):
     config["plt_file"]                  = lib.get_file(config["plt_path"], "plot_"+str(is_transfer_learning) +"_" +str(config["ntrain_cifar10"])+".jpg")
     return config
 
+def get_config_q2():
+    config = {}
+    config['params']                    = os.environ['DATAPATH'] + "vgg_params/vgg16.pkl"
+    return config
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print "Arguments needs either be dummy or q1 or q2, NUM_TRAINING, ALPHA"
         exit(0)
-    if sys.argv[1] == "q1":
+    if sys.argv[1] == "q1a":
         config = get_config(True)
         o_conv_net = conv_net(config)
 	o_conv_net.train()
-    elif sys.argv[1] == "q2":
+    elif sys.argv[1] == "q1b":
         config = get_config(False)
 	o_conv_net = conv_net(config)
         o_conv_net.train()
+    elif sys.argv[1] == "q2":
+        config = get_config_q2()
+        classifier = conv_classifier_type(config)
+        classifier.train()
     elif sys.argv[1] == "dummy":
 	l.load_cifar_100_data(config)
         l.load_cifar_10_data(config)

@@ -9,6 +9,8 @@ from theano.misc.pkl_utils import load
 from scipy.misc import imread
 from PIL import Image
 import os
+import cPickle as pickle
+
 srng = RandomStreams()
 
 def floatX(X):
@@ -54,7 +56,7 @@ def dump_params_pickle(file,params_to_pickle):
 
 def load_params_pickle(file):
     with open(file, 'rb') as f:
-        loaded_params = load(f)
+        loaded_params = pickle.load(f)
     return loaded_params
 
 def get_kernel(shape=(3,3),sigma=0.5):
