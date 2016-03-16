@@ -26,7 +26,7 @@ class conv_net:
         print "Num cifar-100 test examples          : ", config["ntest_cifar100"]
         print "Minibatch size                       : ", config["mini_batch_size"]
         print "Using fine labels                    : ", config["fine_labels"]
-        print "Joing learning                       : ", config["transfer_learning"]
+        print "Joint learning                       : ", config["transfer_learning"]
         print "Alpha                                : ", config["alpha"]
         self.trX10, self.trY10, self.teX10, self.teY10 = load_cifar_10_data(config)
         self.trX100, self.trY100, self.teX100, self.teY100 = load_cifar_100_data(config)
