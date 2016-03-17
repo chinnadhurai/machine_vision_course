@@ -41,7 +41,16 @@ def get_config(is_transfer_learning):
 
 def get_config_q2():
     config = {}
+    config["dpath"]                     = os.environ['DATAPATH']
+    config["opath"]                     = os.environ['OUTPUTPATH']
+    config["cifar10_path"]              = config["dpath"] + "cifar10/"
+    config["data_augment"]              = False
+    config["ntrain_cifar10"]            = 49000
+    config['ntest_cifar10']             = 10000
     config['params']                    = os.environ['DATAPATH'] + "vgg_params/vgg16.pkl"
+    config['mini_batch_size']           = 32
+    config['epochs']                    = 10
+    
     return config
 
 if __name__ == "__main__":

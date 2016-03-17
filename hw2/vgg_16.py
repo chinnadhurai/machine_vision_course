@@ -15,9 +15,9 @@ from lasagne.layers.dnn import Conv2DDNNLayer as ConvLayer
 from lasagne.nonlinearities import softmax
 
 
-def build_model():
+def build_model(input_var=None):
     net = {}
-    net['input'] = InputLayer((None, 3, 224, 224))
+    net['input'] = InputLayer(shape=(None, 3, 224, 224), input_var=input_var)
     net['conv1_1'] = ConvLayer(
         net['input'], 64, 3, pad=1, flip_filters=False)
     net['conv1_2'] = ConvLayer(

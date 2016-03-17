@@ -8,7 +8,7 @@ import scipy as sp
 from scipy import signal
 from PIL import Image
 import cPickle as pickle
-from load_data import load_cifar_10_data,load_cifar_100_data
+from load_data import load_cifar_10_data_upsampled
 import lib as l
 #from theano.tensor.nnet import conv2d
 from theano.sandbox.cuda.dnn import dnn_conv as conv2d
@@ -18,14 +18,15 @@ from scipy.misc import imread
 import vgg_16
 import lasagne
 
-
 class conv_classifier_type:
     def __init__(self, config):
         self.config = config
+        self.X_image = T.ftensor4()
         self.X = T.fmatrix()
         self.Y = T.fmatrix()
         self.params = self.load_params()
-        self.trX, self.trY, self.teX, self.teY = load_cifar_10_data(config)          "Initialized conv_classifier"
+        self.trX, self.trY, self.teX, self.teY = load_cifar_10_data_upsampled(config)
+        print "Initialized conv_classifier..."
 
     def load_params(self):
         param_loc = self.config['params']
@@ -34,7 +35,7 @@ class conv_classifier_type:
         return params['param values']
     
     def build_model(self, input_var=None):
-        l_in = lasagne.layers.InputLayer(shape=(None, 1, 1000),
+        l_in = lasagne.layers.InputLayer(shape=(None, 1000),
                                          input_var=input_var)
         l_out = lasagne.layers.DenseLayer( 
                 l_in, 
@@ -42,9 +43,10 @@ class conv_classifier_type:
                 nonlinearity=lasagne.nonlinearities.softmax)
         return l_out
 
-    def compile_model(self):
+    def compile_logistic_model(self):
         X,Y = self.X,self.Y
-        network = build_model(X)
+        network = self.build_model(X)
+        self.net_logistic = network
         prediction = lasagne.layers.get_output(network)
         loss = lasagne.objectives.categorical_crossentropy(prediction, Y)
         loss = loss.mean()
@@ -53,22 +55,37 @@ class conv_classifier_type:
             loss, params, learning_rate=0.01, momentum=0.9)
         
         test_prediction = lasagne.layers.get_output(network, deterministic=True)
-        test_loss = lasagne.objectives.categorical_crossentropy(test_prediction,
-                                                            target_var)
+        test_loss = lasagne.objectives.categorical_crossentropy(test_prediction,Y)
         train = theano.function([X, Y], loss, updates=updates)      
-        predict = theano.function([X, Y], [test_prediction])
-        "Compiled model..."
+        predict = theano.function([X], test_prediction)
+        print "Done Compiling logistic model..."
         return train,predict
 
+    def compile_vgg_model(self):
+        X = self.X_image
+        network = vgg_16.build_model(X)
+        self.net_vgg = network
+        test_prediction = lasagne.layers.get_output(network['fc8'], deterministic=True)
+        predict = theano.function([X],test_prediction)
+        print "Done compiling vgg net model..."
+        return predict        
+
     def train(self):
-        X = self.X
-        self.net = vgg_16.build_model()  
-        lasagne.layers.set_all_param_values(self.net['prob'], self.params)
-        train,predict = self.compile_model()
-               
+        predict_vgg = self.compile_vgg_model()
+        train_logistic,predict_logistic = self.compile_logistic_model()
+        trX, trY, teX, teY = self.trX, self.trY, self.teX, self.teY
+        mbsize = self.config['mini_batch_size']
+        
+        for i in range(self.config['epochs']):
+            print "epoch :",i
+            for start, end in zip(range(0, len(trX), mbsize), range(mbsize, len(trX), mbsize)):
+                featureX = predict_vgg(trX[start:end])
+                cost = train(featureX, trY[start:end])
+                l.print_overwrite("cost : ",cost)
+            print "  train accracy :",   np.mean( trY[:5000] == predict_logistic(predict_vgg(trX[:5000]))) \
+            ,"  validation accuracy : ",np.mean(teY[:10000] == predict_logistic(predict_vgg(teX[:10000])))
+
+        
 
 
 
-
-
-           

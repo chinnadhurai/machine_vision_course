@@ -6,6 +6,7 @@ from theano import shared
 from theano import function
 import scipy as sp
 from scipy import signal
+from scipy.misc import imresize
 from PIL import Image
 import os
 
@@ -133,4 +134,48 @@ def load_cifar_100_data(config):
     print "*** final test data :", teX.shape, teY.shape
     print "CIFAR-100 data loaded..."
     return trX,trY,teX,teY	
+
+def upsample(X):
+    u_shape = 224
+    Y = np.zeros((X.shape[0], X.shape[1], u_shape, u_shape))
+    for i in range(X.shape[0]):
+        for j in range(X.shape[1]):
+            Y[i][j] = imresize(X[i][j],(u_shape,u_shape),interp='bilinear', mode=None)
+    return Y
+
+def load_cifar_10_data_upsampled(config):
+    print "loading data from", config['cifar10_path']
+    i = 0
+    print "Upsampling..."   
+    # training data
+    file = os.listdir( config['cifar10_path'] )[0]
+    data_dict = unpickle( config['cifar10_path'] + file )
+    trX = upsample(data_dict['data'].reshape(-1,3,32,32))
+    trY = np.array(data_dict['labels'])
+    for file in os.listdir( config['cifar10_path'] )[1:-1]: 
+        data_dict = unpickle( config['cifar10_path'] + file )  
+        trdata = data_dict['data'].reshape(-1,3,32,32)
+        trX = np.concatenate((trX, upsample(trdata)), axis=0)
+        trY = np.concatenate((trY, np.array(data_dict['labels'])), axis=0)
+    
+    #test data
+    file = os.listdir( config['cifar10_path'] )[-1]
+    data_dict = unpickle( config['cifar10_path'] + file )
+    teX = upsample(data_dict['data'].reshape(-1,3,32,32))
+    teY = np.array(data_dict['labels'])
+    slices = np.arange(config['ntrain_cifar10'])
+    np.random.shuffle(slices)
+    trX = trX[slices]
+    trY = trY[slices]
+    teX = teX[:config['ntest_cifar10']]
+    teY = teY[:config['ntest_cifar10']]
+    print "*** final training data :", trX.shape, trY.shape
+    print "*** final test data :", teX.shape, teY.shape
+    print "data loaded..."
+    return trX,trY,teX,teY
+
 	
+
+
+
+
