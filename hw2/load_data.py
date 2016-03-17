@@ -9,8 +9,8 @@ from scipy import signal
 from scipy.misc import imresize
 from PIL import Image
 import os
-
-
+import lib as l
+import cPickle
 
 def one_hot(x,n):
     if type(x) == list:
@@ -145,6 +145,13 @@ def upsample(X):
 
 def load_cifar_10_data_upsampled(config):
     print "loading data from", config['cifar10_path']
+    if config['load_upsampled_frm_pkl']:
+        l.load_params_pickle(config['upsample_pkl_file'])
+        print "*** Upsampled training data :", trX.shape, trY.shape
+        print "*** Upsampled test data :", teX.shape, teY.shape
+        print "data loaded..."
+        return trX,trY,teX,teY
+
     i = 0
     print "Upsampling..."   
     # training data
@@ -152,12 +159,13 @@ def load_cifar_10_data_upsampled(config):
     data_dict = unpickle( config['cifar10_path'] + file )
     trX = upsample(data_dict['data'].reshape(-1,3,32,32))
     trY = np.array(data_dict['labels'])
+    """
     for file in os.listdir( config['cifar10_path'] )[1:-1]: 
         data_dict = unpickle( config['cifar10_path'] + file )  
         trdata = data_dict['data'].reshape(-1,3,32,32)
         trX = np.concatenate((trX, upsample(trdata)), axis=0)
         trY = np.concatenate((trY, np.array(data_dict['labels'])), axis=0)
-    
+    """
     #test data
     file = os.listdir( config['cifar10_path'] )[-1]
     data_dict = unpickle( config['cifar10_path'] + file )
@@ -172,6 +180,8 @@ def load_cifar_10_data_upsampled(config):
     print "*** final training data :", trX.shape, trY.shape
     print "*** final test data :", teX.shape, teY.shape
     print "data loaded..."
+    #params_to_pickle = [trX,trY,teX,teY]
+    #l.dump_params_pickle(config["upsample_pkl_file"],params_to_pickle)
     return trX,trY,teX,teY
 
 	

@@ -23,7 +23,7 @@ class conv_classifier_type:
         self.config = config
         self.X_image = T.ftensor4()
         self.X = T.fmatrix()
-        self.Y = T.fmatrix()
+        self.Y = T.ivector()
         self.params = self.load_params()
         self.trX, self.trY, self.teX, self.teY = load_cifar_10_data_upsampled(config)
         print "Initialized conv_classifier..."
@@ -35,7 +35,7 @@ class conv_classifier_type:
         return params['param values']
     
     def build_model(self, input_var=None):
-        l_in = lasagne.layers.InputLayer(shape=(None, 1000),
+        l_in = lasagne.layers.InputLayer(shape=(None,1000),
                                          input_var=input_var)
         l_out = lasagne.layers.DenseLayer( 
                 l_in, 
@@ -56,8 +56,8 @@ class conv_classifier_type:
         
         test_prediction = lasagne.layers.get_output(network, deterministic=True)
         test_loss = lasagne.objectives.categorical_crossentropy(test_prediction,Y)
-        train = theano.function([X, Y], loss, updates=updates)      
-        predict = theano.function([X], test_prediction)
+        train = theano.function([X, Y], loss, updates=updates, allow_input_downcast=True)      
+        predict = theano.function([X], test_prediction, allow_input_downcast=True)
         print "Done Compiling logistic model..."
         return train,predict
 
@@ -66,7 +66,7 @@ class conv_classifier_type:
         network = vgg_16.build_model(X)
         self.net_vgg = network
         test_prediction = lasagne.layers.get_output(network['fc8'], deterministic=True)
-        predict = theano.function([X],test_prediction)
+        predict = theano.function([X],test_prediction, allow_input_downcast=True)
         print "Done compiling vgg net model..."
         return predict        
 
@@ -80,10 +80,11 @@ class conv_classifier_type:
             print "epoch :",i
             for start, end in zip(range(0, len(trX), mbsize), range(mbsize, len(trX), mbsize)):
                 featureX = predict_vgg(trX[start:end])
-                cost = train(featureX, trY[start:end])
+                print featureX[0,:10]
+                cost = train_logistic(featureX, trY[start:end])
                 l.print_overwrite("cost : ",cost)
             print "  train accracy :",   np.mean( trY[:5000] == predict_logistic(predict_vgg(trX[:5000]))) \
-            ,"  validation accuracy : ",np.mean(teY[:10000] == predict_logistic(predict_vgg(teX[:10000])))
+            ,"  validation accuracy : ",np.mean(teY[:1000] == predict_logistic(predict_vgg(teX[:1000])))
 
         
 

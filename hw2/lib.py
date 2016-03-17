@@ -52,7 +52,7 @@ def print_overwrite(string,val):
 
 def dump_params_pickle(file,params_to_pickle):
      with open(file, 'wb') as f:
-        dump(params_to_pickle, f)
+        pickle.dump(params_to_pickle, f)
 
 def load_params_pickle(file):
     with open(file, 'rb') as f:
