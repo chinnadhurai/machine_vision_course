@@ -75,18 +75,15 @@ class conv_classifier_type:
         train_logistic,predict_logistic = self.compile_logistic_model()
         trX, trY, teX, teY = self.trX, self.trY, self.teX, self.teY
         mbsize = self.config['mini_batch_size']
-        
+        print_size = 1000
         for i in range(self.config['epochs']):
             print "epoch :",i
+            trS,teS=0,0
             for start, end in zip(range(0, len(trX), mbsize), range(mbsize, len(trX), mbsize)):
                 featureX = predict_vgg(trX[start:end])
-                print featureX[0,:10]
                 cost = train_logistic(featureX, trY[start:end])
                 l.print_overwrite("cost : ",cost)
-            print "  train accracy :",   np.mean( trY[:5000] == predict_logistic(predict_vgg(trX[:5000]))) \
-            ,"  validation accuracy : ",np.mean(teY[:1000] == predict_logistic(predict_vgg(teX[:1000])))
-
-        
-
-
-
+            for start, end in zip(range(0, print_size, mbsize), range(mbsize,print_size, mbsize)):
+                trS +=  np.sum( trY[start:end] == predict_logistic(predict_vgg(trX[start:end])))
+                teS +=  np.sum( teY[start:end] == predict_logistic(predict_vgg(teX[start:end])))
+            print "  train accracy :", (trS/print_size) ,"  validation accuracy : ",(teS/print_size)
