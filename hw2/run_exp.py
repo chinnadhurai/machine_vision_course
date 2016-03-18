@@ -15,7 +15,9 @@ import load_data as l
 import lib 
 import vgg_16
 from q2 import conv_classifier_type
- 
+import gzip 
+import h5py
+
 def get_config(is_transfer_learning):
     config = {}
     config["dpath"]                     = os.environ['DATAPATH']
@@ -51,7 +53,9 @@ def get_config_q2():
     config['mini_batch_size']           = 32
     config['epochs']                    = 10
     config['load_upsampled_frm_pkl']    = False
-    config['upsample_pkl_file']         = os.environ['DATAPATH'] + "/upsampled.pkl"   
+    config['upsample_pkl_file']         = os.environ['DATAPATH'] + "upsampled.zip"   
+    config['dataset_file']              = os.environ['DATAPATH'] + "dataset.zip"
+    config['load_dataset_file']         = False
     return config
 
 if __name__ == "__main__":
@@ -71,8 +75,21 @@ if __name__ == "__main__":
         classifier = conv_classifier_type(config)
         classifier.train()
     elif sys.argv[1] == "dummy":
-	l.load_cifar_100_data(config)
-        l.load_cifar_10_data(config)
+	#l.load_cifar_100_data(config)
+        #l.load_cifar_10_data(config)
+        x,y = np.zeros((1,3,224,224)), np.zeros(50)
+        dfile = os.environ['DATAPATH'] + "dataset1.h5"
+        h5f = h5py.File(dfile, 'w')
+        h5f.create_dataset('dataset_1', data=x)
+        h5f.create_dataset('dataset_2', data=y)
+        h5f.close()
+        h5f = h5py.File(dfile,'r')
+        a = h5f['dataset_1'][:]
+        b = h5f['dataset_2'][:]
+        h5f.close()
+        #lib.dump_params_pickle(dfile, [x,y])
+        #a,b = lib.load_params_pickle_gzip(dfile)
+        print a.shape, b.shape
     else:
         print "Arguments can either be q1 or q2"
         exit(0)

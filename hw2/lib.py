@@ -10,6 +10,7 @@ from scipy.misc import imread
 from PIL import Image
 import os
 import cPickle as pickle
+import gzip
 
 srng = RandomStreams()
 
@@ -50,12 +51,20 @@ def print_overwrite(string,val):
     sys.stdout.write('\r' + string + str(val))
     sys.stdout.flush()
 
-def dump_params_pickle(file,params_to_pickle):
-     with open(file, 'wb') as f:
+def dump_params_pickle(file_path,params_to_pickle):
+    print "Dumping params to ",file_path 
+    with gzip.open(file_path, 'wb') as f:
         pickle.dump(params_to_pickle, f)
 
-def load_params_pickle(file):
-    with open(file, 'rb') as f:
+def load_params_pickle(file_path):
+    print "loading params from",file_path
+    with open(file_path, 'rb') as f:
+        loaded_params = pickle.load(f)
+    return loaded_params
+
+def load_params_pickle_gzip(file_path):
+    print "loading params from",file_path
+    with gzip.open(file_path, 'rb') as f:
         loaded_params = pickle.load(f)
     return loaded_params
 

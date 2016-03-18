@@ -24,14 +24,11 @@ class conv_classifier_type:
         self.X_image = T.ftensor4()
         self.X = T.fmatrix()
         self.Y = T.ivector()
-        self.params = self.load_params()
-        self.trX, self.trY, self.teX, self.teY = load_cifar_10_data_upsampled(config)
         print "Initialized conv_classifier..."
 
     def load_params(self):
         param_loc = self.config['params']
         params = l.load_params_pickle(param_loc)
-        print "Loaded params from ", param_loc      
         return params['param values']
     
     def build_model(self, input_var=None):
@@ -63,27 +60,50 @@ class conv_classifier_type:
 
     def compile_vgg_model(self):
         X = self.X_image
+        params = self.load_params()
         network = vgg_16.build_model(X)
         self.net_vgg = network
         test_prediction = lasagne.layers.get_output(network['fc8'], deterministic=True)
+        lasagne.layers.set_all_param_values(network['fc8'],params) 
         predict = theano.function([X],test_prediction, allow_input_downcast=True)
         print "Done compiling vgg net model..."
         return predict        
 
-    def train(self):
+    def create_dataset(self):
+        print "Creating dataset from vgg net..."
         predict_vgg = self.compile_vgg_model()
-        train_logistic,predict_logistic = self.compile_logistic_model()
-        trX, trY, teX, teY = self.trX, self.trY, self.teX, self.teY
+        trX, trY, teX, teY = load_cifar_10_data_upsampled(self.config)
         mbsize = self.config['mini_batch_size']
-        print_size = 1000
+        featuretrX = np.zeros((len(trX), 1000))
+        featureteX = np.zeros((len(teX), 1000))
+        i = 0
+        total = len(range(0, len(trX), mbsize))
+        for start, end in zip(range(0, len(trX), mbsize), range(mbsize, len(trX), mbsize)):
+            featuretrX[start:end] = predict_vgg(trX[start:end])
+            i += 1
+            percent = (i*100)/total
+            l.print_overwrite("Traning data percentage done %: ",percent)
+        i = 0
+        total = len(range(0, len(teX), mbsize))
+        for start, end in zip(range(0, len(teX), mbsize), range(mbsize, len(teX), mbsize)):
+            featureteX[start:end] = predict_vgg(teX[start:end])
+            i += 1
+            percent = (i*100)/total
+            l.print_overwrite("Test data percentage done %: ",percent)
+        print "\nloading data into", self.config['dataset_file'] 
+        l.dump_params_pickle(self.config['dataset_file'], [featuretrX,trY,featureteX,teY])
+
+    def train(self):
+        train_logistic,predict_logistic = self.compile_logistic_model()
+        if self.config['load_dataset_file'] == False:
+            self.create_dataset()
+        trX, teY, teX, teY = l.load_params_pickle_gzip(self.config['dataset_file'])
+        mbsize = self.config['mini_batch_size']
         for i in range(self.config['epochs']):
             print "epoch :",i
-            trS,teS=0,0
             for start, end in zip(range(0, len(trX), mbsize), range(mbsize, len(trX), mbsize)):
-                featureX = predict_vgg(trX[start:end])
-                cost = train_logistic(featureX, trY[start:end])
+                cost = train_logistic(trX[start:end], trY[start:end])
                 l.print_overwrite("cost : ",cost)
-            for start, end in zip(range(0, print_size, mbsize), range(mbsize,print_size, mbsize)):
-                trS +=  np.sum( trY[start:end] == predict_logistic(predict_vgg(trX[start:end])))
-                teS +=  np.sum( teY[start:end] == predict_logistic(predict_vgg(teX[start:end])))
-            print "  train accracy :", (trS/print_size) ,"  validation accuracy : ",(teS/print_size)
+            trM =  np.mean( trY[:20000] == predict_logistic(trX[:20000]))
+            teM =  np.mean( teY[:10000] == predict_logistic(teX[:10000]))
+            print "  train accracy :", trM ,"  validation accuracy : ",teM

@@ -146,7 +146,7 @@ def upsample(X):
 def load_cifar_10_data_upsampled(config):
     print "loading data from", config['cifar10_path']
     if config['load_upsampled_frm_pkl']:
-        l.load_params_pickle(config['upsample_pkl_file'])
+        trX,trY,teX,teY = l.load_params_pickle_gzip(config['upsample_pkl_file'])
         print "*** Upsampled training data :", trX.shape, trY.shape
         print "*** Upsampled test data :", teX.shape, teY.shape
         print "data loaded..."
@@ -180,8 +180,8 @@ def load_cifar_10_data_upsampled(config):
     print "*** final training data :", trX.shape, trY.shape
     print "*** final test data :", teX.shape, teY.shape
     print "data loaded..."
-    #params_to_pickle = [trX,trY,teX,teY]
-    #l.dump_params_pickle(config["upsample_pkl_file"],params_to_pickle)
+    params_to_pickle = [trX,trY,teX,teY]
+    l.dump_params_pickle(config["upsample_pkl_file"],params_to_pickle)
     return trX,trY,teX,teY
 
 	
