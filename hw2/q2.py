@@ -49,9 +49,10 @@ class conv_classifier_type:
         loss = loss.mean()
         params = lasagne.layers.get_all_params(network, trainable=True)
         updates = lasagne.updates.nesterov_momentum(
-            loss, params, learning_rate=0.01, momentum=0.9)
+            loss, params, learning_rate=0.001, momentum=0.99)
         
         test_prediction = lasagne.layers.get_output(network, deterministic=True)
+        test_prediction = T.argmax(test_prediction, axis=1)
         test_loss = lasagne.objectives.categorical_crossentropy(test_prediction,Y)
         train = theano.function([X, Y], loss, updates=updates, allow_input_downcast=True)      
         predict = theano.function([X], test_prediction, allow_input_downcast=True)
@@ -91,19 +92,20 @@ class conv_classifier_type:
             percent = (i*100)/total
             l.print_overwrite("Test data percentage done %: ",percent)
         print "\nloading data into", self.config['dataset_file'] 
-        l.dump_params_pickle(self.config['dataset_file'], [featuretrX,trY,featureteX,teY])
+        l.dump_h5(self.config['dataset_file'], [featuretrX,trY,featureteX,teY])
 
     def train(self):
         train_logistic,predict_logistic = self.compile_logistic_model()
         if self.config['load_dataset_file'] == False:
             self.create_dataset()
-        trX, teY, teX, teY = l.load_params_pickle_gzip(self.config['dataset_file'])
+        trX, trY, teX, teY = l.load_h5(self.config['dataset_file'])
         mbsize = self.config['mini_batch_size']
         for i in range(self.config['epochs']):
             print "epoch :",i
             for start, end in zip(range(0, len(trX), mbsize), range(mbsize, len(trX), mbsize)):
                 cost = train_logistic(trX[start:end], trY[start:end])
                 l.print_overwrite("cost : ",cost)
-            trM =  np.mean( trY[:20000] == predict_logistic(trX[:20000]))
+            trM =  np.mean( trY[:50000] == predict_logistic(trX[:50000]))
             teM =  np.mean( teY[:10000] == predict_logistic(teX[:10000]))
-            print "  train accracy :", trM ,"  validation accuracy : ",teM
+            print trX.shape, trY.shape, teX.shape, teY.shape
+            print "  train accracy % :", trM*100 ,"  validation accuracy %: ",teM*100

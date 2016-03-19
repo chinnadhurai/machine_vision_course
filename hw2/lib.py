@@ -11,6 +11,7 @@ from PIL import Image
 import os
 import cPickle as pickle
 import gzip
+import h5py
 
 srng = RandomStreams()
 
@@ -53,7 +54,7 @@ def print_overwrite(string,val):
 
 def dump_params_pickle(file_path,params_to_pickle):
     print "Dumping params to ",file_path 
-    with gzip.open(file_path, 'wb') as f:
+    with open(file_path, 'wb') as f:
         pickle.dump(params_to_pickle, f)
 
 def load_params_pickle(file_path):
@@ -64,7 +65,7 @@ def load_params_pickle(file_path):
 
 def load_params_pickle_gzip(file_path):
     print "loading params from",file_path
-    with gzip.open(file_path, 'rb') as f:
+    with open(file_path, 'rb') as f:
         loaded_params = pickle.load(f)
     return loaded_params
 
@@ -100,6 +101,11 @@ def add_gnoise_util(image):
     #print(image.shape)
     return image
 
+def add_gnoise_util_kernel(image,kernel):
+    from scipy import signal
+    image   = signal.convolve2d(image, kernel, boundary='fill', fillvalue=0,mode='same')
+    return image
+
 def get_dir(home_dir,arg):
     final_dir=os.path.join(home_dir,arg)
     if not os.path.exists(final_dir):
@@ -108,3 +114,19 @@ def get_dir(home_dir,arg):
 
 def get_file(dir_name, filename):
     return os.path.join(dir_name, filename)
+
+def dump_h5(filepath, data):
+    print "h5py : dumping data into", filepath 
+    h5f = h5py.File(filepath, 'w')
+    for i in range(len(data)):
+        h5f.create_dataset('dataset_'+str(i), data=data[i])
+    h5f.close()
+
+def load_h5(filepath):
+    print "h5py : loading data from", filepath
+    h5f = h5py.File(filepath,'r')
+    params = []
+    for key in h5f.keys():
+        params.append(h5f[key][:])
+    h5f.close()
+    return params
