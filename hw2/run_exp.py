@@ -8,7 +8,7 @@ import scipy as sp
 from scipy import signal
 from PIL import Image
 import os
-from conv_net import conv_net
+from q1 import conv_net
 from scipy.misc import imread
 import sys
 import load_data as l
@@ -18,7 +18,7 @@ from q2 import conv_classifier_type
 import gzip 
 import h5py
 
-def get_config(is_transfer_learning):
+def get_config_q1(is_transfer_learning):
     config = {}
     config["dpath"]                     = os.environ['DATAPATH']
     config["opath"]                     = os.environ['OUTPUTPATH']
@@ -63,11 +63,11 @@ if __name__ == "__main__":
         print "Arguments needs either be dummy or q1 or q2, NUM_TRAINING, ALPHA"
         exit(0)
     if sys.argv[1] == "q1a":
-        config = get_config(True)
+        config = get_config_q1(True)
         o_conv_net = conv_net(config)
 	o_conv_net.train()
     elif sys.argv[1] == "q1b":
-        config = get_config(False)
+        config = get_config_q1(False)
 	o_conv_net = conv_net(config)
         o_conv_net.train()
     elif sys.argv[1] == "q2":
