@@ -17,6 +17,7 @@ import sys
 from scipy.misc import imread
 import vgg_16
 import lasagne
+from lasagne.regularization import regularize_layer_params, l2
 
 class conv_classifier_type:
     def __init__(self, config):
@@ -40,16 +41,17 @@ class conv_classifier_type:
                 nonlinearity=lasagne.nonlinearities.softmax)
         return l_out
 
-    def compile_logistic_model(self):
+    def compile_logistic_model(self, lamda):
         X,Y = self.X,self.Y
         network = self.build_model(X)
         self.net_logistic = network
         prediction = lasagne.layers.get_output(network)
+        l2_penalty = lamda*regularize_layer_params(network, l2)
         loss = lasagne.objectives.categorical_crossentropy(prediction, Y)
-        loss = loss.mean()
+        loss = loss.mean() #+ l2_penalty
         params = lasagne.layers.get_all_params(network, trainable=True)
         updates = lasagne.updates.nesterov_momentum(
-            loss, params, learning_rate=0.001, momentum=0.99)
+            loss, params, learning_rate=0.01, momentum=0.99)
         
         test_prediction = lasagne.layers.get_output(network, deterministic=True)
         test_prediction = T.argmax(test_prediction, axis=1)
@@ -95,11 +97,13 @@ class conv_classifier_type:
         l.dump_h5(self.config['dataset_file'], [featuretrX,trY,featureteX,teY])
 
     def train(self):
-        train_logistic,predict_logistic = self.compile_logistic_model()
+        lamda = 0.01
+        train_logistic,predict_logistic = self.compile_logistic_model(lamda)
         if self.config['load_dataset_file'] == False:
             self.create_dataset()
         trX, trY, teX, teY = l.load_h5(self.config['dataset_file'])
         mbsize = self.config['mini_batch_size']
+        
         for i in range(self.config['epochs']):
             print "epoch :",i
             for start, end in zip(range(0, len(trX), mbsize), range(mbsize, len(trX), mbsize)):
@@ -107,5 +111,4 @@ class conv_classifier_type:
                 l.print_overwrite("cost : ",cost)
             trM =  np.mean( trY[:50000] == predict_logistic(trX[:50000]))
             teM =  np.mean( teY[:10000] == predict_logistic(teX[:10000]))
-            print trX.shape, trY.shape, teX.shape, teY.shape
-            print "  train accracy % :", trM*100 ,"  validation accuracy %: ",teM*100
+            print "\n  train accracy % :", trM*100 ,"  validation accuracy %: ",teM*100

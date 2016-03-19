@@ -54,8 +54,8 @@ def get_config_q2():
     config['epochs']                    = 100
     config['load_upsampled_frm_pkl']    = False
     config['upsample_pkl_file']         = os.environ['DATAPATH'] + "upsampled.h5"   
-    config['dataset_file']              = os.environ['DATAPATH'] + "dataset_custom_kernel.h5"
-    config['load_dataset_file']         = False
+    config['dataset_file']              = os.environ['DATAPATH'] + "dataset.h5"#"dataset_custom_kernel.h5"
+    config['load_dataset_file']         = True #False
     return config
 
 if __name__ == "__main__":
