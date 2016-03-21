@@ -54,7 +54,6 @@ class conv_classifier_type:
         loss = loss.mean() + l2_penalty
         if input_params:
             print"Compiling classifier with input params..."
-            print input_params[0].get_value().shape, input_params[1].get_value().shape
             for i in range(len(input_params)):
                 input_params[i] = input_params[i].get_value()
             lasagne.layers.set_all_param_values(net['l_out'], input_params, trainable=True)
@@ -116,8 +115,8 @@ class conv_classifier_type:
         val_size = trX.shape[0]/10
         vaX = trX[slices[:val_size]]
         vaY = trY[slices[:val_size]]
-        trX = trX[slices[val_size:]]
-        trY = trY[slices[val_size:]]
+        #trX = trX[slices[val_size:]]
+        #trY = trY[slices[val_size:]]
         print "Training size      :", trX.shape[0]
         print "Validation size    :", vaX.shape[0] 
         print "Test size          :", teX.shape[0]
