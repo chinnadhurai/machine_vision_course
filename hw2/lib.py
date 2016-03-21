@@ -12,6 +12,8 @@ import os
 import cPickle as pickle
 import gzip
 import h5py
+import sys
+sys.dont_write_bytecode = True
 
 srng = RandomStreams()
 

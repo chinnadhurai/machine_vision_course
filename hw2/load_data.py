@@ -11,6 +11,8 @@ from PIL import Image
 import os
 import lib as l
 import cPickle
+import sys 
+sys.dont_write_bytecode = True
 
 def one_hot(x,n):
     if type(x) == list:

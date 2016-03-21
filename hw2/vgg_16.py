@@ -13,7 +13,8 @@ from lasagne.layers import DropoutLayer
 from lasagne.layers import Pool2DLayer as PoolLayer
 from lasagne.layers.dnn import Conv2DDNNLayer as ConvLayer
 from lasagne.nonlinearities import softmax
-
+import sys
+sys.dont_write_bytecode = True
 
 def build_model(input_var=None):
     net = {}

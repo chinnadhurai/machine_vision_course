@@ -17,6 +17,7 @@ import vgg_16
 from q2 import conv_classifier_type
 import gzip 
 import h5py
+sys.dont_write_bytecode = True
 
 def get_config_q1(is_transfer_learning):
     config = {}
@@ -56,6 +57,7 @@ def get_config_q2():
     config['upsample_pkl_file']         = os.environ['DATAPATH'] + "upsampled.h5"   
     config['dataset_file']              = os.environ['DATAPATH'] + "dataset.h5"#"dataset_custom_kernel.h5"
     config['load_dataset_file']         = True #False
+    config["lamda_list"]                = [0.0,1e-4,1e-3,0.01]
     return config
 
 if __name__ == "__main__":

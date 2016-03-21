@@ -15,6 +15,7 @@ from theano.sandbox.cuda.dnn import dnn_conv as conv2d
 from theano.tensor.signal.pool import pool_2d as max_pool_2d
 import sys
 from scipy.misc import imread
+sys.dont_write_bytecode = True
 
 class conv_net:
     def __init__(self, config):

@@ -18,6 +18,7 @@ from scipy.misc import imread
 import vgg_16
 import lasagne
 from lasagne.regularization import regularize_layer_params, l2
+sys.dont_write_bytecode = True
 
 class conv_classifier_type:
     def __init__(self, config):
@@ -33,23 +34,32 @@ class conv_classifier_type:
         return params['param values']
     
     def build_model(self, input_var=None):
-        l_in = lasagne.layers.InputLayer(shape=(None,1000),
+        net = {}
+        net['l_in'] = lasagne.layers.InputLayer(shape=(None,1000),
                                          input_var=input_var)
-        l_out = lasagne.layers.DenseLayer( 
-                l_in, 
+        net['l_out'] = lasagne.layers.DenseLayer( 
+                net['l_in'], 
                 num_units=10,
                 nonlinearity=lasagne.nonlinearities.softmax)
-        return l_out
+        return net
 
-    def compile_logistic_model(self, lamda):
+    def compile_logistic_model(self, lamda, input_params=None):
         X,Y = self.X,self.Y
-        network = self.build_model(X)
+        net = self.build_model(X)
+        network = net['l_out']
         self.net_logistic = network
         prediction = lasagne.layers.get_output(network)
         l2_penalty = lamda*regularize_layer_params(network, l2)
         loss = lasagne.objectives.categorical_crossentropy(prediction, Y)
-        loss = loss.mean() #+ l2_penalty
+        loss = loss.mean() + l2_penalty
+        if input_params:
+            print"Compiling classifier with input params..."
+            print input_params[0].get_value().shape, input_params[1].get_value().shape
+            for i in range(len(input_params)):
+                input_params[i] = input_params[i].get_value()
+            lasagne.layers.set_all_param_values(net['l_out'], input_params, trainable=True)
         params = lasagne.layers.get_all_params(network, trainable=True)
+        self.inst_params = params
         updates = lasagne.updates.nesterov_momentum(
             loss, params, learning_rate=0.01, momentum=0.99)
         
@@ -97,18 +107,49 @@ class conv_classifier_type:
         l.dump_h5(self.config['dataset_file'], [featuretrX,trY,featureteX,teY])
 
     def train(self):
-        lamda = 0.01
-        train_logistic,predict_logistic = self.compile_logistic_model(lamda)
+        lamda_list = self.config["lamda_list"] 
         if self.config['load_dataset_file'] == False:
             self.create_dataset()
         trX, trY, teX, teY = l.load_h5(self.config['dataset_file'])
+        slices = np.arange(trX.shape[0])
+        np.random.shuffle(slices)
+        val_size = trX.shape[0]/10
+        vaX = trX[slices[:val_size]]
+        vaY = trY[slices[:val_size]]
+        trX = trX[slices[val_size:]]
+        trY = trY[slices[val_size:]]
+        print "Training size      :", trX.shape[0]
+        print "Validation size    :", vaX.shape[0] 
+        print "Test size          :", teX.shape[0]
         mbsize = self.config['mini_batch_size']
-        
-        for i in range(self.config['epochs']):
-            print "epoch :",i
-            for start, end in zip(range(0, len(trX), mbsize), range(mbsize, len(trX), mbsize)):
-                cost = train_logistic(trX[start:end], trY[start:end])
-                l.print_overwrite("cost : ",cost)
-            trM =  np.mean( trY[:50000] == predict_logistic(trX[:50000]))
-            teM =  np.mean( teY[:10000] == predict_logistic(teX[:10000]))
-            print "\n  train accracy % :", trM*100 ,"  validation accuracy %: ",teM*100
+        max_val = -1
+        for lamda in lamda_list:
+            print "\nLamda :", lamda
+            max_val_per_lamda = -1
+            train_logistic,predict_logistic = self.compile_logistic_model(lamda)
+            for i in range(self.config['epochs']):
+                #print "epoch :",i
+                for start, end in zip(range(0, len(trX), mbsize), range(mbsize, len(trX), mbsize)):
+                    cost = train_logistic(trX[start:end], trY[start:end])
+                    #l.print_overwrite("cost : ",cost)
+                trM =  np.mean( trY[:50000] == predict_logistic(trX[:50000]))
+                vaM =  np.mean( vaY[:10000] == predict_logistic(vaX[:10000]))
+                l.print_overwrite("validation accuracy % : ", vaM*100)
+                if ( max_val_per_lamda <= vaM ):
+                    max_val_per_lamda = vaM
+                    self.max_params_per_lamda = self.inst_params
+                    #print "\n  train accracy % :", trM*100 ,"  validation accuracy %: ",teM*100
+            print "\nMAX validation accuracy % : ", max_val_per_lamda*100    
+            if (max_val < max_val_per_lamda):
+                max_val = max_val_per_lamda
+                self.lamda = lamda
+                self.best_params = self.max_params_per_lamda
+            
+        train_logistic,predict_logistic = self.compile_logistic_model(lamda, self.best_params)
+        teM =  np.mean( teY[:10000] == predict_logistic(teX[:10000]))
+        print "best lamda   :", self.lamda
+        print "Test Accuracy:", teM*100
+
+
+
+
