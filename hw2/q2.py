@@ -49,15 +49,15 @@ class conv_classifier_type:
         network = net['l_out']
         self.net_logistic = network
         prediction = lasagne.layers.get_output(network)
-        l2_penalty = lamda*regularize_layer_params(network, l2)
         loss = lasagne.objectives.categorical_crossentropy(prediction, Y)
-        loss = loss.mean() + l2_penalty
+        loss = loss.mean() 
+        for key in net.keys():
+            loss += lamda*regularize_layer_params(net[key], l2)
         if input_params:
             print"Compiling classifier with input params..."
-            for i in range(len(input_params)):
-                input_params[i] = input_params[i].get_value()
-            lasagne.layers.set_all_param_values(net['l_out'], input_params, trainable=True)
-        params = lasagne.layers.get_all_params(network, trainable=True)
+            lasagne.layers.set_all_param_values( net['l_out'],
+                                                 [i.get_vlue() for i in input_params])
+        params = lasagne.layers.get_all_params(network)
         self.inst_params = params
         updates = lasagne.updates.nesterov_momentum(
             loss, params, learning_rate=0.01, momentum=0.99)
