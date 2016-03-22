@@ -76,6 +76,9 @@ if __name__ == "__main__":
         config = get_config_q2()
         classifier = conv_classifier_type(config)
         classifier.train()
+    elif sys.argv[1] == "gen_picture":
+        config = get_config_q1(True)
+        l.load_cifar_100_data(config,config["dpath"] + "cifar100.jpeg") 
     elif sys.argv[1] == "dummy":
         x,y = np.zeros((1,3)), np.zeros(50)
         dfile = os.environ['DATAPATH'] + "dataset1.h5"

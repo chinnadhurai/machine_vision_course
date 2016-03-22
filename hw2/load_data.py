@@ -48,6 +48,7 @@ def mirror_image1(X_train):
     return X2_train
 
 def convert_to_image(image, name):
+    print "Saving image to ", name
     image = np.swapaxes(image,0,1)
     image = np.swapaxes(image,1,2)
     im = Image.fromarray(image)
@@ -97,7 +98,7 @@ def load_cifar_10_data(config):
     print "CIFAR-10 data loaded..."
     return trX,trY,teX,teY
 
-def load_cifar_100_data(config):
+def load_cifar_100_data(config, gen_picture_file=None):
     dir        =  config['cifar100_path']
     print "loading data from", dir
     test_file  = os.listdir(dir)[0]
@@ -106,6 +107,11 @@ def load_cifar_100_data(config):
     train_dict = unpickle( dir  + train_file )
     trX = train_dict['data'].reshape(-1,3,32,32)
     teX = test_dict['data'].reshape(-1,3,32,32)
+    
+    if gen_picture_file is not None:
+        convert_to_image(trX[np.random.randint(1000)], gen_picture_file)
+        return
+    
     if config['fine_labels']:
         nlabels = 100
         label_key = 'fine_labels'
@@ -134,7 +140,7 @@ def load_cifar_100_data(config):
     teY = teY[0:config['ntest_cifar100']]
     print "*** final training data :", trX.shape, trY.shape
     print "*** final test data :", teX.shape, teY.shape
-    print "CIFAR-100 data loaded..."
+    print "CIFAR-100 data loaded..."    
     return trX,trY,teX,teY	
 
 def upsample(X):
