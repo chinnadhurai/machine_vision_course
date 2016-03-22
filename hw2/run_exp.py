@@ -51,13 +51,13 @@ def get_config_q2():
     config["ntrain_cifar10"]            = 50000
     config['ntest_cifar10']             = 10000
     config['params']                    = os.environ['DATAPATH'] + "vgg_params/vgg16.pkl"
-    config['mini_batch_size']           = 32
-    config['epochs']                    = 100
+    config['mini_batch_size']           = 256
+    config['epochs']                    = 50
     config['load_upsampled_frm_pkl']    = False
     config['upsample_pkl_file']         = os.environ['DATAPATH'] + "upsampled.h5"   
     config['dataset_file']              = os.environ['DATAPATH'] + "dataset.h5"#"dataset_custom_kernel.h5"
     config['load_dataset_file']         = True #False
-    config["lamda_list"]                = [0.0,1e-4,1e-3,0.01]
+    config["lamda_list"]                = [0.0,1e-6,1e-5,1e-4,2e-4,1e-3]
     return config
 
 if __name__ == "__main__":
@@ -77,22 +77,9 @@ if __name__ == "__main__":
         classifier = conv_classifier_type(config)
         classifier.train()
     elif sys.argv[1] == "dummy":
-	#l.load_cifar_100_data(config)
-        #l.load_cifar_10_data(config)
         x,y = np.zeros((1,3)), np.zeros(50)
         dfile = os.environ['DATAPATH'] + "dataset1.h5"
         lib.dump_h5(dfile,[x,y])
-        #h5f = h5py.File(dfile, 'w')
-        #h5f.create_dataset('dataset_'+str(1), data=x)
-        #h5f.create_dataset('dataset_'+str(2), data=y)
-        #h5f.close()
-        #h5f = h5py.File(dfile,'r')
-        #a = h5f['dataset_1'][:]
-        #b = h5f['dataset_2'][:]
-        #parint h5f.keys()
-        #h5f.close()
-        #lib.dump_params_pickle(dfile, [x,y])
-        #a,b = lib.load_params_pickle_gzip(dfile)
         a,b = lib.load_h5(dfile)
         print a.shape, b.shape
     else:

@@ -17,7 +17,7 @@ import sys
 from scipy.misc import imread
 import vgg_16
 import lasagne
-from lasagne.regularization import regularize_layer_params, l2
+from lasagne.regularization import regularize_layer_params, l2,l1
 sys.dont_write_bytecode = True
 
 class conv_classifier_type:
@@ -52,19 +52,19 @@ class conv_classifier_type:
         loss = lasagne.objectives.categorical_crossentropy(prediction, Y)
         loss = loss.mean() 
         for key in net.keys():
-            loss += lamda*regularize_layer_params(net[key], l2)
+            loss += lamda*regularize_layer_params(net[key], l2) + \
+                    lamda*regularize_layer_params(net[key], l1) 
         if input_params:
             print"Compiling classifier with input params..."
-            lasagne.layers.set_all_param_values( net['l_out'],
-                                                 [i.get_vlue() for i in input_params])
+            lasagne.layers.set_all_param_values( network,
+                                                 [i.get_value() for i in input_params])
         params = lasagne.layers.get_all_params(network)
         self.inst_params = params
         updates = lasagne.updates.nesterov_momentum(
-            loss, params, learning_rate=0.01, momentum=0.99)
+            loss, params, learning_rate=0.01, momentum=0.9)
         
         test_prediction = lasagne.layers.get_output(network, deterministic=True)
         test_prediction = T.argmax(test_prediction, axis=1)
-        test_loss = lasagne.objectives.categorical_crossentropy(test_prediction,Y)
         train = theano.function([X, Y], loss, updates=updates, allow_input_downcast=True)      
         predict = theano.function([X], test_prediction, allow_input_downcast=True)
         print "Done Compiling logistic model..."
@@ -96,6 +96,7 @@ class conv_classifier_type:
             percent = (i*100)/total
             l.print_overwrite("Traning data percentage done %: ",percent)
         i = 0
+        print "\n"
         total = len(range(0, len(teX), mbsize))
         for start, end in zip(range(0, len(teX), mbsize), range(mbsize, len(teX), mbsize)):
             featureteX[start:end] = predict_vgg(teX[start:end])
@@ -115,8 +116,8 @@ class conv_classifier_type:
         val_size = trX.shape[0]/10
         vaX = trX[slices[:val_size]]
         vaY = trY[slices[:val_size]]
-        #trX = trX[slices[val_size:]]
-        #trY = trY[slices[val_size:]]
+        trX = trX[slices[val_size:]]
+        trY = trY[slices[val_size:]]
         print "Training size      :", trX.shape[0]
         print "Validation size    :", vaX.shape[0] 
         print "Test size          :", teX.shape[0]
@@ -148,7 +149,3 @@ class conv_classifier_type:
         teM =  np.mean( teY[:10000] == predict_logistic(teX[:10000]))
         print "best lamda   :", self.lamda
         print "Test Accuracy:", teM*100
-
-
-
-
