@@ -8,7 +8,7 @@ import scipy as sp
 from scipy import signal
 from PIL import Image
 import cPickle as pickle
-from load_data import load_cifar_10_data,load_cifar_100_data
+from load_data import one_hot,load_cifar_10_data,load_cifar_100_data
 import lib as l
 #from theano.tensor.nnet import conv2d
 from theano.sandbox.cuda.dnn import dnn_conv as conv2d
@@ -138,7 +138,10 @@ class conv_net:
         c10_zip   = zip(range(0, len(trX10), mbsize), range(mbsize, len(trX10), mbsize))
         c100_zip  = zip(range(0, len(trX100), mbsize), range(mbsize, len(trX100), mbsize))
         total_len = len(c10_zip) + len(c100_zip)
-        c10_cost = []
+        l_train_c10_cost = []
+        l_valid_c10_cost = []
+        l_train_c100_cost = []
+        l_valid_c100_cost = []
         if self.config["transfer_learning"] == False:
             total_len = len(c10_zip)
             c100_zip = []
@@ -158,25 +161,40 @@ class conv_net:
                      l.print_overwrite("cost : ",cost)
                      t_itr += 1
                      c100_itr += 1
-            cost10 = self.train_cifar10(trX10[:5000], trY10[:5000])
-            c10_cost.append(cost10/self.alpha) 
+            cost = self.train_cifar10(trX10[:10000], trY10[:10000])
+            l_train_c10_cost.append(cost/self.alpha) 
+            cost = self.train_cifar10(teX10[:10000], one_hot(teY10[:10000],10))
+            l_valid_c10_cost.append(cost/self.alpha)
             print "\nCIFAR10 : train accracy :", np.mean(np.argmax(trY10[:5000], axis=1) == self.predict_cifar10(trX10[:5000])) \
-            ,"  validation accuracy : ",np.mean(teY10[:10000] == self.predict_cifar10(teX10[:10000])) \
-            ,"  cost: ", cost10
+            ,"  validation accuracy : ",np.mean(teY10[:10000] == self.predict_cifar10(teX10[:10000])) 
 	    if self.config["transfer_learning"]:
                 print "CIFAR100: train accracy :", np.mean(np.argmax(trY100[:5000], axis=1) == self.predict_cifar100(trX100[:5000])) \
-                ,"  validation accuracy : ",np.mean(np.argmax(teY100[:10000],axis=1) == self.predict_cifar100(teX100[:10000])) \
-                ,"  cost: ", self.train_cifar100(trX100[:5000], trY100[:5000])
-        self.plot_cifar_10_cost(c10_cost)
+                ,"  validation accuracy : ",np.mean(np.argmax(teY100[:10000],axis=1) == self.predict_cifar100(teX100[:10000])) 
+                cost = self.train_cifar100(trX100[:10000], trY100[:10000])
+                l_train_c100_cost.append(cost/(1-self.alpha))  
+                cost = self.train_cifar100(teX100[:10000], teY100[:10000])
+                l_valid_c100_cost.append(cost/(1-self.alpha)) 
+        self.plot_cost(l_train_c10_cost, l_valid_c10_cost)
+        self.plot_cost(l_train_c100_cost, l_valid_c100_cost, True)
 
-    def plot_cifar_10_cost(self,Y):
+    def plot_cost(self,Y_train,Y_valid,cifar100=None):
+        if cifar100 is True and self.config["transfer_learning"] is False:
+            return
         import matplotlib
         matplotlib.use('Agg') # Must be before importing matplotlib.pyplot or pylab!
         import matplotlib.pyplot as plt
-        plt.plot(Y,label='CIFAR-10 NLL')
+        plt_file = self.config["cifar10_plt_file"]
+        Y_label  = 'CIFAR-10 NLL'
+        if cifar100:
+            plt_file = self.config["cifar100_plt_file"]
+            Y_label  = 'CIFAR-100 NLL'
+        plt.plot(Y_train,label='train NLL')
+        plt.plot(Y_valid,label='valid NLL')
         plt.xlabel('Epochs')
-        plt.ylabel('CIFAR-10 NLL')
-        plt.suptitle('CIFAR-10 NLL vs iterations curve')
-        plt.savefig(self.config["plt_file"])
-        print "Saving plot to", self.config["plt_file"]
+        plt.ylabel(Y_label)
+        title = "Joint learning :" + str(self.config['transfer_learning']) + ",n:"+ str(self.config["ntrain_cifar10"]) + ",a:"+ str(self.config["alpha"])
+        plt.suptitle(title)
+        legend = plt.legend(loc='lower center', shadow=True)
+        plt.savefig(plt_file)
+        print "Saving plot to", plt_file
         plt.close()

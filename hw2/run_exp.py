@@ -19,6 +19,9 @@ import gzip
 import h5py
 sys.dont_write_bytecode = True
 
+# arg 1 ->  q1 
+# arg 2 ->  n
+# arg 3 -> alpha
 def get_config_q1(is_transfer_learning):
     config = {}
     config["dpath"]                     = os.environ['DATAPATH']
@@ -36,10 +39,11 @@ def get_config_q1(is_transfer_learning):
     config["mini_batch_size"]           = 32
     config["pickle_file_location"]      = config['opath']+'model.zip'
     config["output_images_location"]    = config['opath'] + 'figs/'
-    config['epochs']                    = 20
+    config['epochs']                    = 25
     config["alpha"]                     = max(0.1,float(sys.argv[3]))
     config["plt_path"]                  = lib.get_dir(config["opath"],"plots"+str(sys.argv[1])+"_"+str(config["alpha"]))
-    config["plt_file"]                  = lib.get_file(config["plt_path"], "plot_"+str(is_transfer_learning) +"_" +str(config["ntrain_cifar10"])+".jpg")
+    config["cifar10_plt_file"]          = lib.get_file(config["plt_path"], "plot_"+str(is_transfer_learning) +"_" +str(config["ntrain_cifar10"]) + "_cifar10.jpg")
+    config["cifar100_plt_file"]          = lib.get_file(config["plt_path"], "plot_"+str(is_transfer_learning) +"_" +str(config["ntrain_cifar10"]) + "_cifar100.jpg")
     return config
 
 def get_config_q2():
