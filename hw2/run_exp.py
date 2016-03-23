@@ -18,6 +18,7 @@ from q2 import conv_classifier_type
 import gzip 
 import h5py
 sys.dont_write_bytecode = True
+import pickle
 
 # arg 1 ->  q1 
 # arg 2 ->  n
@@ -36,14 +37,15 @@ def get_config_q1(is_transfer_learning):
     config["ntrain_cifar100"]           = 50000 	# max is 50000
     config["ntest_cifar100"]            = 10000 	# max is 10000
     config["fine_labels"]               = False   #True     
-    config["mini_batch_size"]           = 32
+    config["mini_batch_size"]           = 128
     config["pickle_file_location"]      = config['opath']+'model.zip'
     config["output_images_location"]    = config['opath'] + 'figs/'
-    config['epochs']                    = 25
+    config['epochs']                    = 30
     config["alpha"]                     = max(0.1,float(sys.argv[3]))
     config["plt_path"]                  = lib.get_dir(config["opath"],"plots"+str(sys.argv[1])+"_"+str(config["alpha"]))
     config["cifar10_plt_file"]          = lib.get_file(config["plt_path"], "plot_"+str(is_transfer_learning) +"_" +str(config["ntrain_cifar10"]) + "_cifar10.jpg")
-    config["cifar100_plt_file"]          = lib.get_file(config["plt_path"], "plot_"+str(is_transfer_learning) +"_" +str(config["ntrain_cifar10"]) + "_cifar100.jpg")
+    config["cifar100_plt_file"]         = lib.get_file(config["plt_path"], "plot_"+str(is_transfer_learning) +"_" +str(config["ntrain_cifar10"]) + "_cifar100.jpg")
+    config['max_value_file']            = config["opath"] + "max_value.txt"
     return config
 
 def get_config_q2():
@@ -83,6 +85,10 @@ if __name__ == "__main__":
     elif sys.argv[1] == "gen_picture":
         config = get_config_q1(True)
         l.load_cifar_100_data(config,config["dpath"] + "cifar100.jpeg") 
+    elif sys.argv[1] == 'read_pkl':
+        config = get_config_q1(True)
+        max_value = pickle.load( open(config['max_value_file'] , "r" ) )
+        print max_value
     elif sys.argv[1] == "dummy":
         x,y = np.zeros((1,3)), np.zeros(50)
         dfile = os.environ['DATAPATH'] + "dataset1.h5"

@@ -89,7 +89,7 @@ def load_cifar_10_data(config):
     train_slices = slices[:config['ntrain_cifar10']]
     test_slices = slices[config['ntrain_cifar10']:]
     teX = trX[test_slices]
-    teY = trY[test_slices]
+    teY = one_hot(trY[test_slices],10)
     trX = trX[train_slices]
     trY = trY[train_slices]
     trY = one_hot(trY,10)

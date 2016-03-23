@@ -125,8 +125,9 @@ class conv_net:
         self.update_running_mean_std(updates,r_m,r_s,T.mean(l6, axis=0), T.std(l6,axis=0))
         train = theano.function(inputs=[X, Y], outputs=cost, updates=updates, allow_input_downcast=True)
         py_x = self.test_model(X, w1, w2, w3, w4, w5, w6, w_o, r_m, r_s, g, b)
+        cost = T.mean(T.nnet.categorical_crossentropy(py_x, Y))
         y_x = T.argmax(py_x, axis=1)
-        predict = theano.function(inputs=[X], outputs=y_x, allow_input_downcast=True)
+        predict = theano.function(inputs=[X,Y], outputs=[y_x, cost], allow_input_downcast=True)
         return train, predict       
         
     def train(self):
@@ -142,6 +143,7 @@ class conv_net:
         l_valid_c10_cost = []
         l_train_c100_cost = []
         l_valid_c100_cost = []
+        max_valid_accuracy = -1
         if self.config["transfer_learning"] == False:
             total_len = len(c10_zip)
             c100_zip = []
@@ -161,22 +163,38 @@ class conv_net:
                      l.print_overwrite("cost : ",cost)
                      t_itr += 1
                      c100_itr += 1
-            cost = self.train_cifar10(trX10[:10000], trY10[:10000])
-            l_train_c10_cost.append(cost/self.alpha) 
-            cost = self.train_cifar10(teX10[:10000], one_hot(teY10[:10000],10))
-            l_valid_c10_cost.append(cost/self.alpha)
-            print "\nCIFAR10 : train accracy :", np.mean(np.argmax(trY10[:5000], axis=1) == self.predict_cifar10(trX10[:5000])) \
-            ,"  validation accuracy : ",np.mean(teY10[:10000] == self.predict_cifar10(teX10[:10000])) 
-	    if self.config["transfer_learning"]:
-                print "CIFAR100: train accracy :", np.mean(np.argmax(trY100[:5000], axis=1) == self.predict_cifar100(trX100[:5000])) \
-                ,"  validation accuracy : ",np.mean(np.argmax(teY100[:10000],axis=1) == self.predict_cifar100(teX100[:10000])) 
-                cost = self.train_cifar100(trX100[:10000], trY100[:10000])
-                l_train_c100_cost.append(cost/(1-self.alpha))  
-                cost = self.train_cifar100(teX100[:10000], teY100[:10000])
-                l_valid_c100_cost.append(cost/(1-self.alpha)) 
+            trM, cost = self.predict_cifar10(trX10[:10000], trY10[:10000])
+            l_train_c10_cost.append(cost) 
+            teM,cost = self.predict_cifar10(teX10[:10000], teY10[:10000])
+            l_valid_c10_cost.append(cost)
+            
+            valid_accuracy = np.mean(np.argmax(teY10[:10000], axis=1) == teM)
+            print "\nCIFAR10 : train accracy :", np.mean(np.argmax(trY10[:10000], axis=1) == trM) \
+            ,"  validation accuracy : ",valid_accuracy 
+	    if max_valid_accuracy < valid_accuracy:
+                max_valid_accuracy = valid_accuracy
+            if self.config["transfer_learning"]:
+                trM,tr_cost = self.predict_cifar100(trX100[:10000], trY100[:10000])
+                teM,te_cost = self.predict_cifar100(teX100[:10000], teY100[:10000])
+                print "CIFAR100: train accracy :", np.mean(np.argmax(trY100[:10000], axis=1) == trM) \
+                ,"  validation accuracy : ",np.mean(np.argmax(teY100[:10000],axis=1) == teM) 
+                l_train_c100_cost.append(tr_cost)  
+                l_valid_c100_cost.append(te_cost) 
         self.plot_cost(l_train_c10_cost, l_valid_c10_cost)
         self.plot_cost(l_train_c100_cost, l_valid_c100_cost, True)
-
+        self.pickle_max_accuracy(max_valid_accuracy)
+    
+    def pickle_max_accuracy(self, max_value):
+        text = 'ntrain :' + str(self.config["ntrain_cifar10"])
+        text += " joint :" + str( self.config["transfer_learning"])
+        text += " alpha :" + str(self.config["alpha"])
+        text += ' max_accuracy :' + str(max_value)
+        text += "\n"
+        #pickle.dump(info, open(self.config["max_value_file"], "a" ) )
+        with open(self.config["max_value_file"], "a") as myfile:
+            myfile.write(text)
+        print "writing to ", self.config["max_value_file"]    
+           
     def plot_cost(self,Y_train,Y_valid,cifar100=None):
         if cifar100 is True and self.config["transfer_learning"] is False:
             return
