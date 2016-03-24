@@ -109,7 +109,9 @@ def load_cifar_100_data(config, gen_picture_file=None):
     teX = test_dict['data'].reshape(-1,3,32,32)
     
     if gen_picture_file is not None:
-        convert_to_image(trX[np.random.randint(1000)], gen_picture_file)
+        for i in range(30):
+            pic_file = gen_picture_file + "cifar100_" + str(i) + ".jpg"
+            convert_to_image(trX[np.random.randint(5000)], pic_file)
         return
     
     if config['fine_labels']:

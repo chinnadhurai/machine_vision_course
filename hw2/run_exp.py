@@ -40,7 +40,7 @@ def get_config_q1(is_transfer_learning):
     config["mini_batch_size"]           = 128
     config["pickle_file_location"]      = config['opath']+'model.zip'
     config["output_images_location"]    = config['opath'] + 'figs/'
-    config['epochs']                    = 30
+    config['epochs']                    = 10
     config["alpha"]                     = max(0.1,float(sys.argv[3]))
     config["plt_path"]                  = lib.get_dir(config["opath"],"plots"+str(sys.argv[1])+"_"+str(config["alpha"]))
     config["cifar10_plt_file"]          = lib.get_file(config["plt_path"], "plot_"+str(is_transfer_learning) +"_" +str(config["ntrain_cifar10"]) + "_cifar10.jpg")
@@ -84,7 +84,7 @@ if __name__ == "__main__":
         classifier.train()
     elif sys.argv[1] == "gen_picture":
         config = get_config_q1(True)
-        l.load_cifar_100_data(config,config["dpath"] + "cifar100.jpeg") 
+        l.load_cifar_100_data(config,config["dpath"]) 
     elif sys.argv[1] == 'read_pkl':
         config = get_config_q1(True)
         max_value = pickle.load( open(config['max_value_file'] , "r" ) )

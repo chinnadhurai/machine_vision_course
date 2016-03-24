@@ -150,6 +150,7 @@ class conv_net:
         for i in range(self.config['epochs']):
             print "epoch :",i
             c10_itr,c100_itr,t_itr = 0,0,0 
+            cost = 0
             while t_itr < total_len:
                 if c10_itr < len(c10_zip):
                      start, end = c10_zip[c10_itr]
@@ -164,9 +165,9 @@ class conv_net:
                      t_itr += 1
                      c100_itr += 1
             trM, cost = self.predict_cifar10(trX10[:10000], trY10[:10000])
-            l_train_c10_cost.append(cost) 
+            l_train_c10_cost.append(self.train_cifar10(trX10[:5000], trY10[:5000])) 
             teM,cost = self.predict_cifar10(teX10[:10000], teY10[:10000])
-            l_valid_c10_cost.append(cost)
+            l_valid_c10_cost.append(self.train_cifar10(teX10[:5000], teY10[:5000]))
             
             valid_accuracy = np.mean(np.argmax(teY10[:10000], axis=1) == teM)
             print "\nCIFAR10 : train accracy :", np.mean(np.argmax(trY10[:10000], axis=1) == trM) \
@@ -183,7 +184,7 @@ class conv_net:
         self.plot_cost(l_train_c10_cost, l_valid_c10_cost)
         self.plot_cost(l_train_c100_cost, l_valid_c100_cost, True)
         self.pickle_max_accuracy(max_valid_accuracy)
-    
+        
     def pickle_max_accuracy(self, max_value):
         text = 'ntrain :' + str(self.config["ntrain_cifar10"])
         text += " joint :" + str( self.config["transfer_learning"])
