@@ -17,12 +17,16 @@ import gzip
 import h5py
 sys.dont_write_bytecode = True
 import pickle
-
+from model_custom_vgg import vgg_feature
+from model_vqa import vqa_type
 
 def get_config():
     config = {}
     config["dpath"]                     = os.environ['DATAPATH']
     config["opath"]                     = os.environ['OUTPUTPATH']
+    config['vgg_params']                = os.path.join( config['dpath'], 'vgg_params/vgg16.pkl')
+    config['vgg_features_folder']       = os.path.join( config["dpath"], 'real_images/vgg_features')
+    config['image_array_folder']        = os.path.join( config["dpath"], 'real_images/cleaned_images')
     return config
 
 if __name__ == "__main__":
@@ -40,8 +44,22 @@ if __name__ == "__main__":
         qfolder = os.path.join( ifolder,"questions")
         modes = ['train','val','test']
         for mode in modes:
-            l.load_coco_data(ifolder, os.path.join(ifolder, "cleaned_images"), mode=mode)
+            v,w = l.load_coco_data(ifolder, os.path.join(ifolder, "cleaned_images"), mode=mode)
+        l.load_questions(qfolder,v)
+    elif sys.argv[1] == "dummy":
+        config = get_config() 
+        ifolder = os.path.join( config["dpath"],"real_images")            
+        afolder = os.path.join( ifolder,"annotations")                      
+        qfolder = os.path.join( ifolder,"questions") 
         #l.load_annotations(afolder)
+        v = 0
+        l.load_questions(qfolder,v)
+    elif sys.argv[1] == "gen_vgg_features":
+        config = get_config()
+        vgg_feature_extractor = vgg_feature(config)
+        features_folder = config['vgg_features_folder']
+        image_array_folder = config['image_array_folder']
+        vgg_feature_extractor.create_vgg_feature_dataset(image_array_folder, features_folder)      
     else:
         print "Arguments can either be q1 or q2"
         exit(0)

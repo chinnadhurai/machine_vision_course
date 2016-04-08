@@ -286,3 +286,27 @@ def load_annotations(folder, mode='val'):
         a_dict[d['question_id']]= d
     print "Number of questions: ", len(a_dict)
     return a_dict
+
+def load_questions(folder, mode='val'):
+    qfiles = listdir(folder)
+    qfile = os.path.join(folder, [i for i in qfiles if str(i).find(mode) != -1 ][0])
+    print "Getting questions from ", qfile
+    qdict = {}
+    data = json.load(open(qfile, 'r'))
+    for q in data['questions']:
+        localdict = {}
+        # task_type = Multiple-Choice, Open-Ended  
+        localdict['type']  = data['task_type']
+        localdict['question'] = q
+        qdict[q['question_id']] = localdict
+    return qdict
+    """
+    for k,v in data.items():
+        print k,"\n... "
+        if type(v) == dict:
+            print "dict", len(v), v.keys()
+        if type(v) == list:
+            print "list", len(v), v[0]
+        else:
+            print v
+    """
