@@ -263,7 +263,8 @@ def get_vocab(folder):
         for f in listdir(s_folder):
             dataset = json.load(open(os.path.join(s_folder,f), 'r'))
             for q in dataset[s_type]:
-                for item in q.values():
+                for key, item in q.items():
+                    print s_type, key 
                     qa =" ".join(re.findall("[a-zA-Z]+", str(item)))
                     for w in qa.lower().split():
                         if w not in vocab:
