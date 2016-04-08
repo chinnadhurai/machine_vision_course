@@ -254,9 +254,25 @@ def load_coco_data ( in_folder, \
 
 
 def get_vocab(folder):
-    q_folder = [f for f in listdir(folder) if "questions" in str(f)][0]
-    print q_folder
-
+    wc = 0
+    vocab = {}
+    word = {}
+    for s_type in ['annotations', 'questions']:
+        s_folder = os.path.join(folder,[fr for fr in listdir(folder) if s_type in str(fr)][0])
+        print s_folder
+        for f in listdir(s_folder):
+            dataset = json.load(open(os.path.join(s_folder,f), 'r'))
+            for q in dataset[s_type]:
+                for item in q.values():
+                    qa =" ".join(re.findall("[a-zA-Z]+", str(item)))
+                    for w in qa.lower().split():
+                        if w not in vocab:
+                            vocab[w] = wc
+                            word[wc] = w
+                            wc+= 1           
+            print "...", f, wc  
+    print len(vocab)
+    return vocab, word
 
 
 def load_annotations(folder, mode='val'):
