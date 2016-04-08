@@ -16,6 +16,8 @@ from os import listdir
 import os
 import h5py
 import json
+from pprint import pprint
+import re
 
 def one_hot(x,n):
     if type(x) == list:
@@ -212,19 +214,27 @@ def load_cifar_10_data_upsampled(config):
     return trX,trY,teX,teY
 
 
-def load_coco_data ( im_folder, \
-                     d_folder, \
-                     mode = 'TRAIN', \
-                     num_files=25,
+def load_coco_data ( in_folder, \
+                     o_folder, \
+                     mode = 'train', \
+                     num_files = 25,
                      vgg_shape = 224 ):
+    mode = mode.lower()
+    im_folder = [ d for d in listdir(os.path.join(in_folder,'images')) if d.find(mode.lower()) != -1 ][0]
+    im_folder = os.path.join(in_folder,'images/'+str(im_folder))
     imgs = listdir(im_folder)
     mbsize = len(imgs) // num_files
     i = 0
+    l_image_id = []
     for start,end in zip(range(0, len(imgs), mbsize), range(mbsize, len(imgs), mbsize)):
         i = i + 1
-        filepath = os.path.join(d_folder, mode  + "_image_" + str(i))
+        filepath = os.path.join(o_folder, mode  + "_image_" + str(i))
         images = []
+        image_ids = []
         for im_file in imgs[start:end]:
+            if not im_file.endswith('.jpg'):
+                continue
+            image_ids.append( int(re.findall(r'\d+',im_file)[-1]) )
             image = imread(os.path.join(im_folder,im_file))
             if len(image.shape) == 3:
                 image = np.swapaxes(image,1,2)
@@ -234,15 +244,28 @@ def load_coco_data ( im_folder, \
                     t_image[j] = imresize(image[j],(vgg_shape,vgg_shape),interp='bilinear', mode=None)
                 images.append(t_image)
         images = np.asarray(images, dtype=np.uint8)
-        print images.shape
         np.save(filepath, images)
-        l.print_overwrite("percent completed %:", 100*i/num_files )
-        print "\n writing to ", filepath
+        l_image_id.append(image_ids)
+        print "Writing to ", filepath
+    l_image_id = np.asarray(l_image_id)
+    filepath = os.path.join(o_folder, mode  + "_image")
+    np.save(filepath, l_image_id)
+    print "Saving image ids to ", filepath
 
 
-def load_annotations(folder):
+def get_vocab(folder):
+    q_folder = [f for f in listdir(folder) if "questions" in str(f)][0]
+    print q_folder
+
+
+
+def load_annotations(folder, mode='val'):
     afiles = listdir(folder)
-    for afile in afiles: 
-        dataset = json.load(open(os.path.join(folder,afile), 'r'))
-        print afile, len(dataset)
-        print dataset.keys()
+    a_file = [i for i in afiles if str(i).find(mode) != -1][0]
+    print "Getting annotations from ", a_file
+    a_dict = {}     
+    dataset = json.load(open(os.path.join(folder,a_file), 'r'))['annotations']
+    for d in dataset:
+        a_dict[d['question_id']]= d
+    print "Number of questions: ", len(a_dict)
+    return a_dict

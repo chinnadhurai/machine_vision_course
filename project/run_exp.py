@@ -27,16 +27,21 @@ def get_config():
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print "Arguments needs either be dummy or q1 or q2, NUM_TRAINING, ALPHA"
+        print "Arguments needs either be chunk / dummy / q1 or q2, NUM_TRAINING, ALPHA"
         exit(0)
-    elif sys.argv[1] == "dummy":
-        config = get_config()     
-        afolder = os.path.join( config["dpath"],"real_images/annotations")
-        qfolder = os.path.join( config["dpath"],"real_images/questions")
-        start = 0
-        mode = 'TRAIN'
-        #l.load_coco_data(imfolder, imfolder, mode=mode)
-        l.load_annotations(afolder)
+    elif sys.argv[1] == "vocab":
+        config = get_config() 
+        ifolder = os.path.join( config["dpath"],"real_images/")
+        l.get_vocab(ifolder)
+    elif sys.argv[1] == "chunk":
+        config = get_config() 
+        ifolder = os.path.join( config["dpath"],"real_images/")    
+        afolder = os.path.join( ifolder,"annotations")
+        qfolder = os.path.join( ifolder,"questions")
+        modes = ['train','val','test']
+        for mode in modes:
+            l.load_coco_data(ifolder, os.path.join(ifolder, "cleaned_images"), mode=mode)
+        #l.load_annotations(afolder)
     else:
         print "Arguments can either be q1 or q2"
         exit(0)
