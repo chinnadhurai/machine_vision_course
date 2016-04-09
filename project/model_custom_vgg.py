@@ -46,10 +46,13 @@ class vgg_feature:
 
     def create_vgg_feature_dataset(self, root_folder, output_folder):
         self.compile_vgg_model()
-        for mode in ['train','val','test']:      
-            files = [f for f in os.listdir(root_folder) if mode in str(f)]
+        for mode in ['val','test']:      
+            files = [f for f in os.listdir(root_folder) if mode in str(f) and f.endswith('.npy')]
             for image_file in files:
-                im_id = re.findall(r'\d+', image_file)[-1]
+                try:
+                    im_id = re.findall(r'\d+', image_file)[-1]
+                except IndexError :
+                    continue
                 feature_file = os.path.join( output_folder, mode + "_feature_" + str(im_id) )   
                 self.create_dataset_util( os.path.join(root_folder,image_file), feature_file)
         print "Done creating dataset ..."
