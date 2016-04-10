@@ -17,8 +17,8 @@ import gzip
 import h5py
 sys.dont_write_bytecode = True
 import pickle
-from model_custom_vgg import vgg_feature
-from model_vqa import vqa_type
+from vgg_model_custom import vgg_feature
+from vqa_model import vqa_type
 
 def get_config():
     config = {}
@@ -60,6 +60,11 @@ if __name__ == "__main__":
         features_folder = config['vgg_features_folder']
         image_array_folder = config['image_array_folder']
         vgg_feature_extractor.create_vgg_feature_dataset(image_array_folder, features_folder)      
+    elif sys.argv[1] == 'build_lstm':
+        config = get_config()
+        vqa_classifier = vqa_type(config)
+        vqa_classifier.build_model()
+        
     else:
         print "Arguments can either be q1 or q2"
         exit(0)

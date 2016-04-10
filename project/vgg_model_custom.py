@@ -46,7 +46,7 @@ class vgg_feature:
 
     def create_vgg_feature_dataset(self, root_folder, output_folder):
         self.compile_vgg_model()
-        for mode in ['train']:#,'val','test']:      
+        for mode in ['train','val','test']:      
             files = [f for f in os.listdir(root_folder) if mode in str(f) and f.endswith('.npy')]
             for image_file in files:
                 try:
