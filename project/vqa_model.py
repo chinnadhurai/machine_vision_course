@@ -45,9 +45,9 @@ class vqa_type:
     def build_question_lstm(self, input_var, mask=None):
         input_dim, seq_len, mb_size = self.q_embed_dim, self.max_seq_length, self.batch_size
         # (batch size, max sequence length, number of features)
-        l_in = lasagne.layers.InputLayer(shape=(mb_size, seq_len, input_dim),
+        l_in = lasagne.layers.InputLayer(shape=(None, seq_len, input_dim),
                                             input_var=input_var)
-        l_mask = lasagne.layers.InputLayer(shape=(mb_size, seq_len), input_var=mask)
+        l_mask = lasagne.layers.InputLayer(shape=(None, seq_len), input_var=mask)
         l_lstm = lasagne.layers.LSTMLayer(l_in, 
                                           num_units             = self.q_embed_dim, 
                                           only_return_final     = True,
