@@ -33,7 +33,7 @@ class vqa_type:
         self.Y                          = T.ivector()
         self.mlp_input_dim              = 1024
         self.q_embed_dim                = 300
-        self.num_answers                = 18
+        self.num_answers                = 1000
         self.bptt_trunk_steps           = -1
         self.grad_clip                  = 100
         self.batch_size                 = 128
@@ -60,6 +60,17 @@ class vqa_type:
         print "Done building question LSTM ..."
         return net
     
+    def build_vgg_feature_mlp(self, input_var):
+        net = {}
+        net['l_in'] = lasagne.layers.InputLayer(shape=(None,1000),
+                                         input_var=input_var)
+        net['l_out'] = lasagne.layers.DenseLayer(
+                net['l_in'],
+                num_units=self.mlp_input_dim,
+                nonlinearity=lasagne.nonlinearities.softmax)
+        print "Done building vgg feature MLP ..."
+        return net
+
     def combine_image_question_model(self,image_feature, question_feature):
         return image_feature * question_feature
     
@@ -77,8 +88,10 @@ class vqa_type:
     def build_model(self):
         qX, mask, iX, Y = self.qX, self.lstm_mask, self.iX, self.Y
         q_lstm_net = self.build_question_lstm(qX, mask)
-        self.ql_out = lasagne.layers.get_output(q_lstm_net['l_dense'])
-        mlp_input = self.combine_image_question_model(self.ql_out, iX)
+        ql_out = lasagne.layers.get_output(q_lstm_net['l_dense'])
+        vgg_mlp_net = self.build_vgg_feature_mlp(iX)
+        vgg_out = lasagne.layers.get_output(vgg_mlp_net['l_out'])
+        mlp_input = self.combine_image_question_model(ql_out, vgg_out)
         network = self.build_mlp_model(mlp_input)['l_out']
         prediction = lasagne.layers.get_output(network, deterministic=True)
         loss = lasagne.objectives.categorical_crossentropy(prediction, Y)
@@ -97,7 +110,19 @@ class vqa_type:
 
     def train(self):
         train, predict = self.build_model()
-               
+        #self.train_util(qX, iX, Y, train, predict)
+        
+    def train_util(self, qX, iX, Y, train, predict):
+        mb_size = self.batch_size
+        for s,e in zip( range(0, len(qX), mb_size), range(mb_size, len(qX), mb_size)):
+            mask = self.get_mask(qX[s:e])
+            loss = train(qX[s:e], mask, iX[s:e], Y[s:e])
+        cumsum = 0
+        for s,e in zip( range(0, len(qX), mb_size), range(mb_size, len(qX), mb_size)):
+            mask = self.get_mask(qX[s:e])
+            pred = predict(qX[s:e], mask ,iX[s:e])
+            cumsum += np.sum(pred == Y[s:e])
+        print "Training accuracy(in  % )           :", cumsum*100 / Y.shape[0]       
         
         
 
