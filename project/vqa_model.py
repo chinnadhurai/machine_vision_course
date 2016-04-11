@@ -28,24 +28,34 @@ class vqa_type:
         print "Configuration :"
         self.config                     = config
         self.qX                         = T.ftensor3()
+        self.lstm_mask                  = T.imatrix()
         self.iX                         = T.fmatrix()
         self.Y                          = T.ivector()
         self.mlp_input_dim              = 1024
+        self.q_embed_dim                = 300
         self.num_answers                = 18
         self.bptt_trunk_steps           = -1
+        self.grad_clip                  = 100
+        self.batch_size                 = 128
+        self.max_seq_length             = 10
         pprint(config)
-        print "----------------------"
+        print "\n----------------------"
         print "Initialization done ..."
     
-    def build_question_lstm(self, input_var):
-        num_units,input_dim, num_classes = 10, 20, self.mlp_input_dim
-        l_in = lasagne.layers.InputLayer(shape=(None, None, input_dim),
+    def build_question_lstm(self, input_var, mask=None):
+        input_dim, seq_len, mb_size = self.q_embed_dim, self.max_seq_length, self.batch_size
+        # (batch size, max sequence length, number of features)
+        l_in = lasagne.layers.InputLayer(shape=(mb_size, seq_len, input_dim),
                                             input_var=input_var)
-        batchsize, seqlen, _ = l_in.input_var.shape
-        l_lstm = lasagne.layers.LSTMLayer(l_in, num_units=num_units, 
-                                          only_return_final=True,
-                                          gradient_steps = self.bptt_trunk_steps)
-        l_dense = lasagne.layers.DenseLayer(l_lstm, num_units=num_classes)
+        l_mask = lasagne.layers.InputLayer(shape=(mb_size, seq_len), input_var=mask)
+        l_lstm = lasagne.layers.LSTMLayer(l_in, 
+                                          num_units             = self.q_embed_dim, 
+                                          only_return_final     = True,
+                                          gradient_steps        = self.bptt_trunk_steps,
+                                          grad_clipping         = self.grad_clip,
+                                          mask_input            = l_mask
+                                         )
+        l_dense = lasagne.layers.DenseLayer(l_lstm, num_units=self.mlp_input_dim)
         net  = {'l_in':l_in, 'l_lstm':l_lstm, 'l_dense':l_dense}
         print "Done building question LSTM ..."
         return net
@@ -65,8 +75,8 @@ class vqa_type:
         return net
         
     def build_model(self):
-        qX, iX, Y = self.qX, self.iX, self.Y
-        q_lstm_net = self.build_question_lstm(qX)
+        qX, mask, iX, Y = self.qX, self.lstm_mask, self.iX, self.Y
+        q_lstm_net = self.build_question_lstm(qX, mask)
         self.ql_out = lasagne.layers.get_output(q_lstm_net['l_dense'])
         mlp_input = self.combine_image_question_model(self.ql_out, iX)
         network = self.build_mlp_model(mlp_input)['l_out']
@@ -79,14 +89,15 @@ class vqa_type:
             loss, params, learning_rate=0.01, momentum=0.9)
         test_prediction = lasagne.layers.get_output(network, deterministic=True)
         test_prediction = T.argmax(test_prediction, axis=1)
-        train = theano.function([qX, iX, Y], loss, updates=updates, allow_input_downcast=True)
-        predict = theano.function([qX, iX], test_prediction, allow_input_downcast=True)
+        print "Compiling..."
+        train = theano.function([qX, mask, iX, Y], loss, updates=updates, allow_input_downcast=True)
+        predict = theano.function([qX, mask, iX], test_prediction, allow_input_downcast=True)
         print "Done Compiling final model..."
         return train,predict
 
     def train(self):
         train, predict = self.build_model()
-        
+               
         
         
 

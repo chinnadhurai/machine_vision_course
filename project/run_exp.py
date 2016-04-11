@@ -63,7 +63,7 @@ if __name__ == "__main__":
     elif sys.argv[1] == 'build_lstm':
         config = get_config()
         vqa_classifier = vqa_type(config)
-        vqa_classifier.build_model()
+        vqa_classifier.train()
         
     else:
         print "Arguments can either be q1 or q2"
