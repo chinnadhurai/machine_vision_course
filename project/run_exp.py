@@ -27,6 +27,7 @@ def get_config():
     config['vgg_params']                = os.path.join( config['dpath'], 'vgg_params/vgg16.pkl')
     config['vgg_features_folder']       = os.path.join( config["dpath"], 'real_images/vgg_features')
     config['image_array_folder']        = os.path.join( config["dpath"], 'real_images/cleaned_images')
+    config['fine_tune_vgg']             = False
     return config
 
 if __name__ == "__main__":

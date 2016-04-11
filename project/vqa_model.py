@@ -38,9 +38,19 @@ class vqa_type:
         self.grad_clip                  = 100
         self.batch_size                 = 128
         self.max_seq_length             = 10
+        self.params                     = []
         pprint(config)
         print "\n----------------------"
         print "Initialization done ..."
+    
+    def add_to_param_list(self,l_params):
+        for p in l_params:
+            self.params.append(p)
+
+    def load_params(self):
+        param_loc = self.config['vgg_params']
+        params = l.load_params_pickle(param_loc)
+        return params['param values']
     
     def build_question_lstm(self, input_var, mask=None):
         input_dim, seq_len, mb_size = self.q_embed_dim, self.max_seq_length, self.batch_size
@@ -56,6 +66,7 @@ class vqa_type:
                                           mask_input            = l_mask
                                          )
         l_dense = lasagne.layers.DenseLayer(l_lstm, num_units=self.mlp_input_dim)
+        self.add_to_param_list( lasagne.layers.get_all_params(l_dense) )
         net  = {'l_in':l_in, 'l_lstm':l_lstm, 'l_dense':l_dense}
         print "Done building question LSTM ..."
         return net
@@ -68,6 +79,7 @@ class vqa_type:
                 net['l_in'],
                 num_units=self.mlp_input_dim,
                 nonlinearity=lasagne.nonlinearities.softmax)
+        self.add_to_param_list( lasagne.layers.get_all_params(net['l_out']) )
         print "Done building vgg feature MLP ..."
         return net
 
@@ -82,11 +94,26 @@ class vqa_type:
                 net['l_in'],
                 num_units=self.num_answers,
                 nonlinearity=lasagne.nonlinearities.softmax)
+        self.add_to_param_list( lasagne.layers.get_all_params(net['l_out']) )
         print "Done building final MLP ..."
         return net
         
+
     def build_model(self):
-        qX, mask, iX, Y = self.qX, self.lstm_mask, self.iX, self.Y
+        if not self.config['fine_tune_vgg']:
+            iX = self.iX
+        else:
+            self.X_image = T.ftensor4()
+            params = self.load_params()
+            network = vgg_16.build_model(self.X_image)
+            self.net_vgg = network
+            iX = lasagne.layers.get_output(network['fc8'], deterministic=True)
+            lasagne.layers.set_all_param_values(network['fc8'],params)
+            self.add_to_param_list(params)
+        return self.build_model_util(iX)
+    
+    def build_model_util(self,iX):
+        qX, mask, Y = self.qX, self.lstm_mask, self.Y
         q_lstm_net = self.build_question_lstm(qX, mask)
         ql_out = lasagne.layers.get_output(q_lstm_net['l_dense'])
         vgg_mlp_net = self.build_vgg_feature_mlp(iX)
@@ -96,7 +123,9 @@ class vqa_type:
         prediction = lasagne.layers.get_output(network, deterministic=True)
         loss = lasagne.objectives.categorical_crossentropy(prediction, Y)
         loss = loss.mean()
-        params = lasagne.layers.get_all_params(network)
+        params = self.params#lasagne.layers.get_all_params(network)
+        print len(params)
+        print [ p.get_value().shape for p in params ]
         self.inst_params = params
         updates = lasagne.updates.nesterov_momentum(
             loss, params, learning_rate=0.01, momentum=0.9)
