@@ -236,9 +236,9 @@ def load_coco_data ( in_folder, \
         for im_file in imgs[start:end]:
             if not im_file.endswith('.jpg'):
                 continue
-            image_ids.append( int(re.findall(r'\d+',im_file)[-1]) )
             image = imread(os.path.join(im_folder,im_file))
             if len(image.shape) == 3:
+                image_ids.append( int(re.findall(r'\d+',im_file)[-1]) )
                 image = np.swapaxes(image,1,2)
                 image = np.swapaxes(image,0,1)
                 t_image = np.zeros((image.shape[0], vgg_shape, vgg_shape))
@@ -250,6 +250,7 @@ def load_coco_data ( in_folder, \
         l_image_id.append(image_ids)
         print "Writing to ", filepath
     l_image_id = np.asarray(l_image_id)
+    print l_image_id.shape
     filepath = os.path.join(o_folder, mode  + "_image")
     np.save(filepath, l_image_id)
     print "Saving image ids to ", filepath
@@ -285,21 +286,27 @@ def get_answer_vocab(folder):
     max_qlen = 0
     oneword_ans = 0
     total_ans = 0
-    for f in listdir(folder):
+    overlap = 0
+    file_list = ['mscoco_train2014_annotations.json', 'mscoco_val2014_annotations.json']
+    for itr,f in enumerate(file_list):# listdir(folder):
         dataset = json.load(open(os.path.join(folder,f), 'r'))
         for q in dataset['annotations']:
             qa = nltk.word_tokenize(str(q['multiple_choice_answer']))
+            if not len(qa) == 1:
+                continue
             oneword_ans += int( len(qa) == 1)
             total_ans += 1
             if max_qlen < len(qa):
                 max_qlen = len(qa)
             for w in qa:
+                if w in vocab and itr > 0:
+                    overlap+=1
                 if w not in vocab:
                     vocab[w] = wc
                     word[wc] = w
                     wc+= 1
         print "...", f, wc , max_qlen, oneword_ans, total_ans
-    print len(vocab)
+    print len(vocab), "overlap:", overlap
     return vocab, word, max_qlen
 
 

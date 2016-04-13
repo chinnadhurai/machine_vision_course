@@ -20,13 +20,17 @@ import pickle
 from vgg_model_custom import vgg_feature
 from vqa_model import vqa_type
 
-def get_config():
+def get_config(image_mode=1):
     config = {}
+    d_image_mode = { '1':'real_images', '2':'abstract_images'}
     config["dpath"]                     = os.environ['DATAPATH']
     config["opath"]                     = os.environ['OUTPUTPATH']
+    config['real_abstract_images']      = os.path.join( config['dpath'], d_image_mode[image_mode])
     config['vgg_params']                = os.path.join( config['dpath'], 'vgg_params/vgg16.pkl')
-    config['vgg_features_folder']       = os.path.join( config["dpath"], 'real_images/vgg_features')
-    config['image_array_folder']        = os.path.join( config["dpath"], 'real_images/cleaned_images')
+    config['questions_folder']          = os.path.join( config['real_abstract_images'],'questions')
+    config['annotations_folder']        = os.path.join( config['real_abstract_images'],'annotations')    
+    config['vgg_features_folder']       = os.path.join( config["real_abstract_images"], 'vgg_features')
+    config['cleaned_images_folder']     = os.path.join( config["real_abstract_images"], 'cleaned_images')
     config['fine_tune_vgg']             = False
     return config
 
@@ -46,15 +50,14 @@ if __name__ == "__main__":
         modes = ['train','val','test']
         for mode in modes:
             v,w = l.load_coco_data(ifolder, os.path.join(ifolder, "cleaned_images"), mode=mode)
-        l.load_questions(qfolder,v)
     elif sys.argv[1] == "dummy":
         config = get_config() 
         ifolder = os.path.join( config["dpath"],"real_images")            
         afolder = os.path.join( ifolder,"annotations")                      
         qfolder = os.path.join( ifolder,"questions") 
         #l.load_annotations(afolder)
-        #l.get_answer_vocab(afolder)
-        l.vqa_api(qfolder,afolder)
+        l.get_answer_vocab(afolder)
+        #l.vqa_api(qfolder,afolder)
         #l.get_question_vocab(qfolder)
     elif sys.argv[1] == "gen_vgg_features":
         config = get_config()
@@ -66,7 +69,7 @@ if __name__ == "__main__":
         config = get_config()
         vqa_classifier = vqa_type(config)
         #vqa_classifier.train()
-        vqa_classifier.get_question_util(24)
+        vqa_classifier.get_train_data()
     else:
         print "Arguments can either be q1 or q2"
         exit(0)

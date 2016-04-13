@@ -24,6 +24,7 @@ from lasagne.layers import *
 from pprint import pprint
 import gzip
 import nltk
+import json
 
 class vqa_type:
     def __init__(self, config):
@@ -190,3 +191,45 @@ class vqa_type:
         print len(image_ids)
         ans = self.get_ans(image_ids,mode)
         
+    def get_image_question_ids(self,afile):
+        answers = json.load(open(afile, 'r'))['annotations']
+        image_ids = []
+        question_ids = []
+        for a in answers:
+            qa = nltk.word_tokenize(str(a['multiple_choice_answer']))
+            if not len(qa)==1:
+                continue
+            image_ids.append(a['image_id'])
+            question_ids.append(a['question_id'])
+        return image_ids, question_ids
+
+    def get_image_file_id(self,image_id,image_db=None):
+        loc = np.where(image_db==image_id)
+        return loc[0][0]+1,loc[1][0]
+        for file_id, ilist in enumerate(image_db):
+            o = [loc for loc,im_id in enumerate(ilist) if image_id == im_id]           
+            if len(o):
+                return file_id+1,o[0]
+
+    def get_image_data(self,image_ids, mode='train'):
+        image_file_tempalte = str(mode) +"_image"
+        feature_file_tempate = str(mode) +"_feature"
+        image_db = np.load('/data/lisatmp4/chinna/data/input/vqa/real_images/cleaned_images/' + image_file_tempalte +'.npy')
+        print image_db.shape
+        im_features = []
+        for itr,im_id in enumerate(image_ids[:20000]):
+            file_id, im_loc = self.get_image_file_id(im_id,image_db)
+            feature_file = feature_file_tempate + "_" + str(file_id) + ".npy"
+            feature = np.load('/data/lisatmp4/chinna/data/input/vqa/real_images/vgg_features/' + feature_file)
+            try:
+                im_features.append(feature[im_loc])
+            except IndexError:
+                print "\n",file_id, im_loc
+            l.print_overwrite("Image data percentage % ", 100*itr/len(image_ids[:20000]))
+        print "\n",np.asarray(im_features).shape
+
+    def get_train_data(self):
+        image_ids, question_ids = self.get_image_question_ids(os.path.join( self.config["dpath"],"real_images/annotations/mscoco_train2014_annotations.json"))
+        self.get_image_data(image_ids)
+
+
