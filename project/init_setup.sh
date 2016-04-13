@@ -1,7 +1,7 @@
 #!/bin/bash
 export PYTHONPATH=$PYTHONPATH:$HOME/Documents/lasagne/
 export PYTHONPATH=$PYTHONPATH:$HOME/Documents/coco/PythonAPI/pycocotools
-export PYTHONPATH=$PYTHONPATH:$HOME/Documents/vqa_api/
+export PYTHONPATH=$PYTHONPATH:$HOME/Documents/vqa_api/PythonHelperTools/vqaTools/
 export PYTHONPATH=$PYTHONPATH:$HOME/Documents/dcnn/
 export DATA_HOME=/data/lisatmp4/chinna/data
 export DATAPATH=$DATA_HOME/input/vqa/

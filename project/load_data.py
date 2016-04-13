@@ -18,6 +18,8 @@ import h5py
 import json
 from pprint import pprint
 import re
+import nltk
+from vqa import VQA
 
 def one_hot(x,n):
     if type(x) == list:
@@ -276,6 +278,51 @@ def get_vocab(folder):
     return vocab, word
 
 
+def get_answer_vocab(folder):
+    wc = 0
+    vocab = {}
+    word = {}
+    max_qlen = 0
+    oneword_ans = 0
+    total_ans = 0
+    for f in listdir(folder):
+        dataset = json.load(open(os.path.join(folder,f), 'r'))
+        for q in dataset['annotations']:
+            qa = nltk.word_tokenize(str(q['multiple_choice_answer']))
+            oneword_ans += int( len(qa) == 1)
+            total_ans += 1
+            if max_qlen < len(qa):
+                max_qlen = len(qa)
+            for w in qa:
+                if w not in vocab:
+                    vocab[w] = wc
+                    word[wc] = w
+                    wc+= 1
+        print "...", f, wc , max_qlen, oneword_ans, total_ans
+    print len(vocab)
+    return vocab, word, max_qlen
+
+
+def get_question_vocab(folder):
+    wc = 0
+    vocab = {}
+    word = {}
+    max_qlen = 0
+    for f in listdir(folder):
+        dataset = json.load(open(os.path.join(folder,f), 'r'))
+        for q in dataset['questions']:
+            qa = nltk.word_tokenize(str(q['question']))#" ".join(re.findall("[a-zA-Z0-9]+", str(q['question'])))
+            if max_qlen < len(qa):
+                max_qlen = len(qa)
+            for w in qa:
+                if w not in vocab:
+                    vocab[w] = wc
+                    word[wc] = w
+                    wc+= 1
+        print "...", f, wc , max_qlen
+    print len(vocab)
+    return vocab, word, max_qlen
+
 def load_annotations(folder, mode='val'):
     afiles = listdir(folder)
     a_file = [i for i in afiles if str(i).find(mode) != -1][0]
@@ -297,7 +344,7 @@ def load_questions(folder, mode='val'):
         localdict = {}
         # task_type = Multiple-Choice, Open-Ended  
         localdict['type']  = data['task_type']
-        localdict['question'] = q
+        localdict['question'] = q['question']
         qdict[q['question_id']] = localdict
     return qdict
     """
@@ -310,3 +357,13 @@ def load_questions(folder, mode='val'):
         else:
             print v
     """
+
+def vqa_api(qfolder,afolder,mode='train'):
+    print "test"
+    qfiles = listdir(qfolder)
+    afiles = listdir(afolder)
+    qfile = os.path.join(qfolder, [i for i in qfiles if str(i).find(mode) != -1 ][0])
+    afile = os.path.join(afolder, [i for i in afiles if str(i).find(mode) != -1 ][0])
+    vqa = VQA(afile,qfile)
+    
+    

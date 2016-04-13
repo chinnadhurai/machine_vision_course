@@ -22,6 +22,8 @@ import os
 import re
 from lasagne.layers import *
 from pprint import pprint
+import gzip
+import nltk
 
 class vqa_type:
     def __init__(self, config):
@@ -153,11 +155,38 @@ class vqa_type:
             cumsum += np.sum(pred == Y[s:e])
         print "Training accuracy(in  % )           :", cumsum*100 / Y.shape[0]       
         
+    def get_input_question(self, image_ids, mode='train'):
+        qfolder = os.path.join( self.config["dpath"],"real_images/questions")
+        print "getting data from...", qfolder
+        get_stored_vocab = True
+        pfile = os.path.join(qfolder, "qvocab.zip")
+        if not get_stored_vocab:
+            self.qvocab, self.qword, self.max_qlen = load_data.get_question_vocab(qfolder)
+            pickle.dump( [self.qvocab, self.qword, self.max_qlen], gzip.open( pfile, "wb" ) )            
+        else:
+            print "gettig data from pickle file", pfile
+            self.qvocab, self.qword, self.max_qlen = pickle.load( gzip.open( pfile, "rb" ) )
+        qdict = load_data.load_questions(qfolder, mode) 
+        q_a = np.ones((len(image_ids),3,self.max_qlen),dtype='uint32' )*-1
+        for itr, im_id in enumerate(image_ids):
+            for i in range(3):
+                q_id = im_id*10 + i
+                q = qdict[q_id]['question']
+                l_a = [ self.qvocab[w] for w in nltk.word_tokenize(str(q)) ]
+                q_a[itr,i,:len(l_a)] = np.array(l_a, dtype='uint32')
+        return q_a
+
+    def get_question_util(self, file_id, mode='train'):
+        ifile =  os.path.join( self.config["dpath"],"real_images/cleaned_images/" + str(mode).lower()+"_image.npy")
+        image_ids = np.load(ifile)[file_id]
+        print len(image_ids)
+        q_a = self.get_input_question(image_ids,mode)
+        print q_a.shape,q_a[np.random.randint(100),0,:]
+        return q_a
+                                  
+    def get_answer_util(self,file_id):
+        ifile =  os.path.join( self.config["dpath"],"real_images/cleaned_images/" + str(mode).lower()+"_image.npy")
+        image_ids = np.load(ifile)[file_id]
+        print len(image_ids)
+        ans = self.get_ans(image_ids,mode)
         
-
-
-
-
-
-
-

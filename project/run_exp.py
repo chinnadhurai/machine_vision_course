@@ -53,8 +53,9 @@ if __name__ == "__main__":
         afolder = os.path.join( ifolder,"annotations")                      
         qfolder = os.path.join( ifolder,"questions") 
         #l.load_annotations(afolder)
-        v = 0
-        l.load_questions(qfolder,v)
+        #l.get_answer_vocab(afolder)
+        l.vqa_api(qfolder,afolder)
+        #l.get_question_vocab(qfolder)
     elif sys.argv[1] == "gen_vgg_features":
         config = get_config()
         vgg_feature_extractor = vgg_feature(config)
@@ -64,8 +65,8 @@ if __name__ == "__main__":
     elif sys.argv[1] == 'build_lstm':
         config = get_config()
         vqa_classifier = vqa_type(config)
-        vqa_classifier.train()
-        
+        #vqa_classifier.train()
+        vqa_classifier.get_question_util(24)
     else:
         print "Arguments can either be q1 or q2"
         exit(0)
