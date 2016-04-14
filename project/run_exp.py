@@ -20,9 +20,9 @@ import pickle
 from vgg_model_custom import vgg_feature
 from vqa_model import vqa_type
 
-def get_config(image_mode=1):
+def get_config(image_mode='real'):
     config = {}
-    d_image_mode = { '1':'real_images', '2':'abstract_images'}
+    d_image_mode = { 'real':'real_images', 'abstract':'abstract_images'}
     config["dpath"]                     = os.environ['DATAPATH']
     config["opath"]                     = os.environ['OUTPUTPATH']
     config['real_abstract_images']      = os.path.join( config['dpath'], d_image_mode[image_mode])
@@ -30,6 +30,7 @@ def get_config(image_mode=1):
     config['questions_folder']          = os.path.join( config['real_abstract_images'],'questions')
     config['annotations_folder']        = os.path.join( config['real_abstract_images'],'annotations')    
     config['vgg_features_folder']       = os.path.join( config["real_abstract_images"], 'vgg_features')
+    config['vqa_model_folder']          = os.path.join( config["vgg_features_folder"], 'vqa_modelA')
     config['cleaned_images_folder']     = os.path.join( config["real_abstract_images"], 'cleaned_images')
     config['fine_tune_vgg']             = False
     return config

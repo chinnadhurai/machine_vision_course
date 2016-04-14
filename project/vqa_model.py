@@ -204,32 +204,80 @@ class vqa_type:
         return image_ids, question_ids
 
     def get_image_file_id(self,image_id,image_db=None):
-        loc = np.where(image_db==image_id)
-        return loc[0][0]+1,loc[1][0]
         for file_id, ilist in enumerate(image_db):
-            o = [loc for loc,im_id in enumerate(ilist) if image_id == im_id]           
-            if len(o):
-                return file_id+1,o[0]
+            try:
+                loc = ilist.index(image_id)
+                return file_id+1, loc
+            except ValueError:
+                continue
+        #print "Image id %d not found" % (image_id)
+        return 1,0
 
     def get_image_data(self,image_ids, mode='train'):
-        image_file_tempalte = str(mode) +"_image"
-        feature_file_tempate = str(mode) +"_feature"
-        image_db = np.load('/data/lisatmp4/chinna/data/input/vqa/real_images/cleaned_images/' + image_file_tempalte +'.npy')
+        """
+        Output a array of image_features correspodining to the image_ids
+        """
+        feature_file_template = str(mode) +"_feature"
+        image_db = np.load(os.path.join( self.config['cleaned_images_folder'],str(mode) +"_image.npy"))
         print image_db.shape
         im_features = []
-        for itr,im_id in enumerate(image_ids[:20000]):
+        for itr,im_id in enumerate(image_ids):
             file_id, im_loc = self.get_image_file_id(im_id,image_db)
-            feature_file = feature_file_tempate + "_" + str(file_id) + ".npy"
-            feature = np.load('/data/lisatmp4/chinna/data/input/vqa/real_images/vgg_features/' + feature_file)
-            try:
-                im_features.append(feature[im_loc])
-            except IndexError:
-                print "\n",file_id, im_loc
-            l.print_overwrite("Image data percentage % ", 100*itr/len(image_ids[:20000]))
-        print "\n",np.asarray(im_features).shape
+            feature_file = feature_file_template + "_" + str(file_id) + ".npy"
+            feature = np.load(os.path.join(self.config['vgg_features_folder'], feature_file))
+            im_features.append(feature[im_loc])
+            l.print_overwrite("Image data percentage % ", 100*itr/len(image_ids))
+        im_features = np.asarray(im_features)
+        print "\nfeature shape", im_features.shape
+        return im_features
+        
+    def get_file(self, folder, mode='train'):
+        ofiles = os.listdir(folder)
+        ofile = os.path.join(folder, [i for i in ofiles if str(i).find(mode) != -1 ][0])  
+        return ofile
 
-    def get_train_data(self):
-        image_ids, question_ids = self.get_image_question_ids(os.path.join( self.config["dpath"],"real_images/annotations/mscoco_train2014_annotations.json"))
-        self.get_image_data(image_ids)
+    def get_train_data(self, save_image_features=False):
+        afile = self.get_file(self.config["annotations_folder"],mode='train')
+        image_ids, question_ids = self.get_image_question_ids(afile)
+        assert len(image_ids) == len(question_ids)
+        # save the images into 50 files
+        num_files = 50
+        if save_image_features:
+            self.save_image_data(image_ids, num_files)
+        mbsize = len(image_ids) // num_files
+        divisions = zip(range(0, len(image_ids), mbsize), range(mbsize, len(image_ids), mbsize))
+        self.question_train_data(question_ids, divisions)        
+    
+    def save_image_data(self, image_ids, num_files=50):
+        mbsize = len(image_ids) // num_files
+        i = 0
+        for s,e in zip(range(0, len(image_ids), mbsize), range(mbsize, len(image_ids), mbsize)):
+            i += 1
+            print "Saving images from %d to %d" %(s,e)
+            f2s = os.path.join(self.config["vqa_model_folder"], 'train_feature' + str(i))
+            np.save(f2s,self.get_image_data(image_ids[s:e]))
+            print "Saving features to %s ...", f2s
+
+    def question_train_data(self, question_ids, divisions):
+        #questions
+        pfile = os.path.join(self.config['questions_folder'], "qvocab.zip")
+        self.qvocab, self.qword, self.max_qlen = pickle.load( gzip.open( pfile, "rb" ) )
+        qdict = load_data.load_questions(self.config['questions_folder'], mode='train')
+        s,e = divisions[0]
+        qn_output = []
+        mask_output = []
+        for s,e in divisions:
+            print "processing qns from %d to %d"%(s,e)
+            q_a = np.ones((len(question_ids[s:e]), self.max_qlen), dtype='uint32')*-1
+            mask = np.zeros((len(question_ids[s:e]), self.max_qlen), dtype='uint32')
+            for itr,q_id in enumerate(question_ids[s:e]):
+                q = qdict[q_id]['question']
+                l_a = [ self.qvocab[w] for w in nltk.word_tokenize(str(q)) ]
+                q_a[itr,:len(l_a)] = np.array(l_a, dtype='uint32')
+                mask[itr,:len(l_a)] = 1
+            qn_output.append(q_a)
+            mask_output.append(mask)
+        return qn_output, mask_output
+
 
 
