@@ -33,6 +33,8 @@ def get_config(image_mode='real'):
     config['vqa_model_folder']          = os.path.join( config["vgg_features_folder"], 'vqa_modelA')
     config['cleaned_images_folder']     = os.path.join( config["real_abstract_images"], 'cleaned_images')
     config['fine_tune_vgg']             = False
+    config['train_data_percent']        = 10
+    config['epochs']                    = 1
     return config
 
 if __name__ == "__main__":
@@ -69,8 +71,8 @@ if __name__ == "__main__":
     elif sys.argv[1] == 'build_lstm':
         config = get_config()
         vqa_classifier = vqa_type(config)
-        #vqa_classifier.train()
-        vqa_classifier.get_train_data()
+        vqa_classifier.train()
+        #vqa_classifier.get_train_data()
     else:
         print "Arguments can either be q1 or q2"
         exit(0)

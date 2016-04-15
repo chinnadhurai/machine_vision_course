@@ -10,7 +10,7 @@ from scipy.misc import imresize,imread
 from PIL import Image
 import os
 import lib as l
-import cPickle
+import cPickle as pickle
 import sys 
 from os import listdir
 import os
@@ -20,6 +20,7 @@ from pprint import pprint
 import re
 import nltk
 from vqa import VQA
+import gzip
 
 def one_hot(x,n):
     if type(x) == list:
@@ -307,7 +308,10 @@ def get_answer_vocab(folder):
                     wc+= 1
         print "...", f, wc , max_qlen, oneword_ans, total_ans
     print len(vocab), "overlap:", overlap
-    return vocab, word, max_qlen
+    f2p = os.path.join(folder,"ans_vocab.zip")
+    print "Dumping pickle file to ", f2p
+    pickle.dump([vocab, word], gzip.open( f2p, "wb" ) )
+    return vocab, word
 
 
 def get_question_vocab(folder):
@@ -343,16 +347,18 @@ def load_annotations(folder, mode='val'):
 
 def load_questions(folder, mode='val'):
     qfiles = listdir(folder)
-    qfile = os.path.join(folder, [i for i in qfiles if str(i).find(mode) != -1 ][0])
-    print "Getting questions from ", qfile
     qdict = {}
-    data = json.load(open(qfile, 'r'))
-    for q in data['questions']:
-        localdict = {}
-        # task_type = Multiple-Choice, Open-Ended  
-        localdict['type']  = data['task_type']
-        localdict['question'] = q['question']
-        qdict[q['question_id']] = localdict
+    qfiles = [i for i in qfiles if str(i).find(mode) != -1 ]
+    for i in qfiles:
+        qfile = os.path.join(folder,i)
+        print "Getting questions from ", qfile
+        data = json.load(open(qfile, 'r'))
+        for q in data['questions']:
+            localdict = {}
+            # task_type = Multiple-Choice, Open-Ended  
+            localdict['type']  = data['task_type']
+            localdict['question'] = q['question']
+            qdict[q['question_id']] = localdict
     return qdict
     """
     for k,v in data.items():

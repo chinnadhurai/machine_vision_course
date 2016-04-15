@@ -42,10 +42,32 @@ class vqa_type:
         self.batch_size                 = 128
         self.max_seq_length             = 10
         self.params                     = []
+        self.num_division               = 50
         pprint(config)
         print "\n----------------------"
+        print "\n Preping data set..."
+        pfile = os.path.join(self.config['questions_folder'], "qvocab.zip")
+        self.qvocab, self.qword, self.max_qlen = pickle.load( gzip.open( pfile, "rb" ) )
+        pfile = os.path.join(self.config['annotations_folder'], "ans_vocab.zip")
+        self.avocab, self.aword = pickle.load( gzip.open( pfile, "rb" ) )
+        print "Answer vocab size    :", len(self.avocab)
+        print "question vocab size  :", len(self.qvocab)
+        self.qdict = {}
+        self.image_ids = {}
+        self.question_ids = {}
+        self.answer_ids = {}
+        self.answers = {}
+        self.questions = {}
+        self.mask= {}
+        self.divisions = {}
+        for mode in ['train','val']:
+            self.qdict[mode] = load_data.load_questions(self.config['questions_folder'], mode=mode)
+            self.image_ids[mode], self.question_ids[mode], self.answer_ids[mode] = self.get_image_question_ans_ids(mode)
+            mbsize = len(self.image_ids[mode]) // self.num_division
+            self.divisions[mode] = zip(range(0, len(self.image_ids[mode]), mbsize), range(mbsize, len(self.image_ids[mode]), mbsize))
+            self.store_question_data(mode)
         print "Initialization done ..."
-    
+
     def add_to_param_list(self,l_params):
         for p in l_params:
             self.params.append(p)
@@ -127,8 +149,8 @@ class vqa_type:
         loss = lasagne.objectives.categorical_crossentropy(prediction, Y)
         loss = loss.mean()
         params = self.params#lasagne.layers.get_all_params(network)
-        print len(params)
-        print [ p.get_value().shape for p in params ]
+        #print len(params)
+        #print [ p.get_value().shape for p in params ]
         self.inst_params = params
         updates = lasagne.updates.nesterov_momentum(
             loss, params, learning_rate=0.01, momentum=0.9)
@@ -142,66 +164,101 @@ class vqa_type:
 
     def train(self):
         train, predict = self.build_model()
-        #self.train_util(qX, iX, Y, train, predict)
+        num_training_divisions = int(self.num_division *self.config['train_data_percent']/100)
+        for epoch in range(self.config['epochs']):
+            l.print_overwrite("epoch :",epoch)
+            for division_id in range(num_training_divisions):
+                #print " epoch percent done",*100/num_training_divisions)
+                qn, mask, iX, ans = self.get_data(division_id, mode='train')
+                #self.train_util(qn, mask, iX, ans, train, predict)
         
-    def train_util(self, qX, iX, Y, train, predict):
+    def train_util(self, qX, mask, iX, Y, train, predict):
         mb_size = self.batch_size
         for s,e in zip( range(0, len(qX), mb_size), range(mb_size, len(qX), mb_size)):
-            mask = self.get_mask(qX[s:e])
-            loss = train(qX[s:e], mask, iX[s:e], Y[s:e])
+            loss = train(qX[s:e], mask[s:e], iX[s:e], Y[s:e])
         cumsum = 0
         for s,e in zip( range(0, len(qX), mb_size), range(mb_size, len(qX), mb_size)):
             mask = self.get_mask(qX[s:e])
             pred = predict(qX[s:e], mask ,iX[s:e])
             cumsum += np.sum(pred == Y[s:e])
         print "Training accuracy(in  % )           :", cumsum*100 / Y.shape[0]       
-        
-    def get_input_question(self, image_ids, mode='train'):
-        qfolder = os.path.join( self.config["dpath"],"real_images/questions")
-        print "getting data from...", qfolder
-        get_stored_vocab = True
-        pfile = os.path.join(qfolder, "qvocab.zip")
-        if not get_stored_vocab:
-            self.qvocab, self.qword, self.max_qlen = load_data.get_question_vocab(qfolder)
-            pickle.dump( [self.qvocab, self.qword, self.max_qlen], gzip.open( pfile, "wb" ) )            
-        else:
-            print "gettig data from pickle file", pfile
-            self.qvocab, self.qword, self.max_qlen = pickle.load( gzip.open( pfile, "rb" ) )
-        qdict = load_data.load_questions(qfolder, mode) 
-        q_a = np.ones((len(image_ids),3,self.max_qlen),dtype='uint32' )*-1
-        for itr, im_id in enumerate(image_ids):
-            for i in range(3):
-                q_id = im_id*10 + i
+
+    
+
+    #************************************************************
+
+    #            TRAINING / VAL DATA RETRIVAL APIS     
+
+    #************************************************************
+
+    def get_data(self, division_num ,mode):
+        image_ids, question_ids, answer_ids = self.image_ids[mode], self.question_ids[mode], self.answer_ids[mode]
+        qn, mask    = self.get_question_data(division_num, mode)    
+        ans         = self.get_answer_data(division_num, mode)
+        iX          = self.get_image_features(division_num, mode)
+        print "Training data shapes ..."
+        print "Question     : ",qn.shape
+        print "mask         : ",mask.shape
+        print "image feature: ",iX.shape
+        print "ans          : ",ans.shape
+        return qn, mask, iX, ans
+    
+    def get_question_data(self, division_id, mode):
+        return self.questions[mode][division_id] \
+             , self.mask[mode][division_id]
+
+    def get_answer_data(self, division_id, mode):
+        s,e = self.divisions[mode][division_id]
+        return self.answers[mode][s:e]
+
+    def get_image_features(self, division_id, mode):
+        f2l = str(mode) + '_feature' + str(division_id+1) + ".npy"
+        f2l = os.path.join(self.config["vqa_model_folder"], f2l)
+        return np.load(f2l)
+
+    def store_question_data(self, mode, save_image_features=False):
+        qdict = self.qdict[mode]
+        question_ids = self.question_ids[mode]
+        divisions = self.divisions[mode]
+        qn_output = []
+        mask_output = []
+        for s,e in divisions:
+            q_a = np.ones((len(question_ids[s:e]), self.max_qlen), dtype='uint32')*-1
+            mask = np.zeros((len(question_ids[s:e]), self.max_qlen), dtype='uint32')
+            for itr,q_id in enumerate(question_ids[s:e]):
                 q = qdict[q_id]['question']
                 l_a = [ self.qvocab[w] for w in nltk.word_tokenize(str(q)) ]
-                q_a[itr,i,:len(l_a)] = np.array(l_a, dtype='uint32')
-        return q_a
+                q_a[itr,:len(l_a)] = np.array(l_a, dtype='uint32')
+                mask[itr,:len(l_a)] = 1
+            qn_output.append(q_a)
+            mask_output.append(mask)
+        self.questions[mode]    = np.asarray(qn_output)
+        self.mask[mode]         = np.asarray(mask_output)
+        print "questions shape      :", self.questions[mode].shape
+        print "mask shape           :", self.mask[mode].shape
+        if save_image_features:
+            self.save_image_data(self.image_ids[mode], self.num_division ,mode)
 
-    def get_question_util(self, file_id, mode='train'):
-        ifile =  os.path.join( self.config["dpath"],"real_images/cleaned_images/" + str(mode).lower()+"_image.npy")
-        image_ids = np.load(ifile)[file_id]
-        print len(image_ids)
-        q_a = self.get_input_question(image_ids,mode)
-        print q_a.shape,q_a[np.random.randint(100),0,:]
-        return q_a
-                                  
-    def get_answer_util(self,file_id):
-        ifile =  os.path.join( self.config["dpath"],"real_images/cleaned_images/" + str(mode).lower()+"_image.npy")
-        image_ids = np.load(ifile)[file_id]
-        print len(image_ids)
-        ans = self.get_ans(image_ids,mode)
-        
-    def get_image_question_ids(self,afile):
+    def get_image_question_ans_ids(self,mode):
+        afile = self.get_file(self.config["annotations_folder"],mode=mode)
         answers = json.load(open(afile, 'r'))['annotations']
+        self.answers[mode] = []
         image_ids = []
         question_ids = []
-        for a in answers:
+        answer_ids = []
+        for a_id,a in enumerate(answers):
             qa = nltk.word_tokenize(str(a['multiple_choice_answer']))
             if not len(qa)==1:
                 continue
+            answer_ids.append(a_id)
+            self.answers[mode].append(self.avocab[qa[0]])
             image_ids.append(a['image_id'])
             question_ids.append(a['question_id'])
-        return image_ids, question_ids
+        self.answers[mode] = np.asarray(self.answers[mode])
+        assert len(image_ids) == len(question_ids)
+        assert len(image_ids) == len(answer_ids)
+
+        return image_ids, question_ids, answer_ids
 
     def get_image_file_id(self,image_id,image_db=None):
         for file_id, ilist in enumerate(image_db):
@@ -213,7 +270,7 @@ class vqa_type:
         #print "Image id %d not found" % (image_id)
         return 1,0
 
-    def get_image_data(self,image_ids, mode='train'):
+    def get_image_data(self,image_ids, mode):
         """
         Output a array of image_features correspodining to the image_ids
         """
@@ -231,53 +288,21 @@ class vqa_type:
         print "\nfeature shape", im_features.shape
         return im_features
         
-    def get_file(self, folder, mode='train'):
+    def get_file(self, folder, mode):
         ofiles = os.listdir(folder)
         ofile = os.path.join(folder, [i for i in ofiles if str(i).find(mode) != -1 ][0])  
         return ofile
 
-    def get_train_data(self, save_image_features=False):
-        afile = self.get_file(self.config["annotations_folder"],mode='train')
-        image_ids, question_ids = self.get_image_question_ids(afile)
-        assert len(image_ids) == len(question_ids)
-        # save the images into 50 files
-        num_files = 50
-        if save_image_features:
-            self.save_image_data(image_ids, num_files)
-        mbsize = len(image_ids) // num_files
-        divisions = zip(range(0, len(image_ids), mbsize), range(mbsize, len(image_ids), mbsize))
-        self.question_train_data(question_ids, divisions)        
-    
-    def save_image_data(self, image_ids, num_files=50):
+    def save_image_data(self, image_ids, num_files, mode):
         mbsize = len(image_ids) // num_files
         i = 0
         for s,e in zip(range(0, len(image_ids), mbsize), range(mbsize, len(image_ids), mbsize)):
             i += 1
             print "Saving images from %d to %d" %(s,e)
-            f2s = os.path.join(self.config["vqa_model_folder"], 'train_feature' + str(i))
-            np.save(f2s,self.get_image_data(image_ids[s:e]))
-            print "Saving features to %s ...", f2s
+            f2s = os.path.join(self.config["vqa_model_folder"], str(mode) + '_feature' + str(i))
+            np.save(f2s,self.get_image_data(image_ids[s:e]),mode)
+            print "Saving features to %s ..."%str(f2s)
 
-    def question_train_data(self, question_ids, divisions):
-        #questions
-        pfile = os.path.join(self.config['questions_folder'], "qvocab.zip")
-        self.qvocab, self.qword, self.max_qlen = pickle.load( gzip.open( pfile, "rb" ) )
-        qdict = load_data.load_questions(self.config['questions_folder'], mode='train')
-        s,e = divisions[0]
-        qn_output = []
-        mask_output = []
-        for s,e in divisions:
-            print "processing qns from %d to %d"%(s,e)
-            q_a = np.ones((len(question_ids[s:e]), self.max_qlen), dtype='uint32')*-1
-            mask = np.zeros((len(question_ids[s:e]), self.max_qlen), dtype='uint32')
-            for itr,q_id in enumerate(question_ids[s:e]):
-                q = qdict[q_id]['question']
-                l_a = [ self.qvocab[w] for w in nltk.word_tokenize(str(q)) ]
-                q_a[itr,:len(l_a)] = np.array(l_a, dtype='uint32')
-                mask[itr,:len(l_a)] = 1
-            qn_output.append(q_a)
-            mask_output.append(mask)
-        return qn_output, mask_output
 
 
 
