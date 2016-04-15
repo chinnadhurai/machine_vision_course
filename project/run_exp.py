@@ -33,8 +33,14 @@ def get_config(image_mode='real'):
     config['vqa_model_folder']          = os.path.join( config["vgg_features_folder"], 'vqa_modelA')
     config['cleaned_images_folder']     = os.path.join( config["real_abstract_images"], 'cleaned_images')
     config['fine_tune_vgg']             = False
-    config['train_data_percent']        = 10
-    config['epochs']                    = 1
+    config['train_data_percent']        = 60
+    config['epochs']                    = 25
+    config['mlp_input_dim']             = 1024
+    config['lstm_hidden_dim']           = 300
+    config['bptt_trunk_steps']          = -1
+    config['grad_clip']                 = 100
+    config['batch_size']                = 128
+    config['num_division']              = 50
     return config
 
 if __name__ == "__main__":

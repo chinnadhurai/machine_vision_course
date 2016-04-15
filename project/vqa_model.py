@@ -34,15 +34,7 @@ class vqa_type:
         self.lstm_mask                  = T.imatrix()
         self.iX                         = T.fmatrix()
         self.Y                          = T.ivector()
-        self.mlp_input_dim              = 1024
-        self.q_embed_dim                = 300
-        self.num_answers                = 1000
-        self.bptt_trunk_steps           = -1
-        self.grad_clip                  = 100
-        self.batch_size                 = 128
-        self.max_seq_length             = 10
         self.params                     = []
-        self.num_division               = 50
         pprint(config)
         print "\n----------------------"
         print "\n Preping data set..."
@@ -52,6 +44,7 @@ class vqa_type:
         self.avocab, self.aword = pickle.load( gzip.open( pfile, "rb" ) )
         print "Answer vocab size    :", len(self.avocab)
         print "question vocab size  :", len(self.qvocab)
+        self.num_division = config['num_division']
         self.qdict = {}
         self.image_ids = {}
         self.question_ids = {}
@@ -66,8 +59,9 @@ class vqa_type:
             mbsize = len(self.image_ids[mode]) // self.num_division
             self.divisions[mode] = zip(range(0, len(self.image_ids[mode]), mbsize), range(mbsize, len(self.image_ids[mode]), mbsize))
             self.store_question_data(mode)
+        self.p_ans_vector = self.unigram_dist()
         print "Initialization done ..."
-
+        
     def add_to_param_list(self,l_params):
         for p in l_params:
             self.params.append(p)
@@ -78,19 +72,19 @@ class vqa_type:
         return params['param values']
     
     def build_question_lstm(self, input_var, mask=None):
-        input_dim, seq_len, mb_size = self.q_embed_dim, self.max_seq_length, self.batch_size
+        input_dim, seq_len = len(self.qvocab), self.max_qlen
         # (batch size, max sequence length, number of features)
         l_in = lasagne.layers.InputLayer(shape=(None, seq_len, input_dim),
                                             input_var=input_var)
         l_mask = lasagne.layers.InputLayer(shape=(None, seq_len), input_var=mask)
         l_lstm = lasagne.layers.LSTMLayer(l_in, 
-                                          num_units             = self.q_embed_dim, 
+                                          num_units             = self.config['lstm_hidden_dim'], 
                                           only_return_final     = True,
-                                          gradient_steps        = self.bptt_trunk_steps,
-                                          grad_clipping         = self.grad_clip,
+                                          gradient_steps        = self.config['bptt_trunk_steps'],
+                                          grad_clipping         = self.config['grad_clip'],
                                           mask_input            = l_mask
                                          )
-        l_dense = lasagne.layers.DenseLayer(l_lstm, num_units=self.mlp_input_dim)
+        l_dense = lasagne.layers.DenseLayer(l_lstm, num_units=self.config['mlp_input_dim'])
         self.add_to_param_list( lasagne.layers.get_all_params(l_dense) )
         net  = {'l_in':l_in, 'l_lstm':l_lstm, 'l_dense':l_dense}
         print "Done building question LSTM ..."
@@ -102,7 +96,7 @@ class vqa_type:
                                          input_var=input_var)
         net['l_out'] = lasagne.layers.DenseLayer(
                 net['l_in'],
-                num_units=self.mlp_input_dim,
+                num_units=self.config['mlp_input_dim'],
                 nonlinearity=lasagne.nonlinearities.softmax)
         self.add_to_param_list( lasagne.layers.get_all_params(net['l_out']) )
         print "Done building vgg feature MLP ..."
@@ -113,12 +107,13 @@ class vqa_type:
     
     def build_mlp_model(self,input_var):
         net = {}
-        net['l_in'] = lasagne.layers.InputLayer(shape=(None,self.mlp_input_dim),
+        net['l_in'] = lasagne.layers.InputLayer(shape=(None,self.config['mlp_input_dim']),
                                          input_var=input_var)
         net['l_out'] = lasagne.layers.DenseLayer(
                 net['l_in'],
-                num_units=self.num_answers,
-                nonlinearity=lasagne.nonlinearities.softmax)
+                num_units=len(self.avocab),
+                nonlinearity=lasagne.nonlinearities.softmax,
+                b = lasagne.init.Categorical(self.p_ans_vector))
         self.add_to_param_list( lasagne.layers.get_all_params(net['l_out']) )
         print "Done building final MLP ..."
         return net
@@ -167,21 +162,22 @@ class vqa_type:
         num_training_divisions = int(self.num_division *self.config['train_data_percent']/100)
         for epoch in range(self.config['epochs']):
             l.print_overwrite("epoch :",epoch)
+            print "\n"
             for division_id in range(num_training_divisions):
                 #print " epoch percent done",*100/num_training_divisions)
                 qn, mask, iX, ans = self.get_data(division_id, mode='train')
-                #self.train_util(qn, mask, iX, ans, train, predict)
+                self.train_util(qn, mask, iX, ans, train, predict)
         
     def train_util(self, qX, mask, iX, Y, train, predict):
-        mb_size = self.batch_size
+        mb_size = self.config['batch_size']
         for s,e in zip( range(0, len(qX), mb_size), range(mb_size, len(qX), mb_size)):
             loss = train(qX[s:e], mask[s:e], iX[s:e], Y[s:e])
         cumsum = 0
         for s,e in zip( range(0, len(qX), mb_size), range(mb_size, len(qX), mb_size)):
-            mask = self.get_mask(qX[s:e])
-            pred = predict(qX[s:e], mask ,iX[s:e])
+            pred = predict(qX[s:e], mask[s:e] ,iX[s:e])
             cumsum += np.sum(pred == Y[s:e])
-        print "Training accuracy(in  % )           :", cumsum*100 / Y.shape[0]       
+        print [self.aword[i] for i in pred][:10]
+        l.print_overwrite("Training accuracy(in  % )           :", cumsum*100 / Y.shape[0])     
 
     
 
@@ -196,13 +192,22 @@ class vqa_type:
         qn, mask    = self.get_question_data(division_num, mode)    
         ans         = self.get_answer_data(division_num, mode)
         iX          = self.get_image_features(division_num, mode)
+        qn = self.get_one_hot(qn, one_hot_size=len(self.qvocab))
+        """
         print "Training data shapes ..."
         print "Question     : ",qn.shape
         print "mask         : ",mask.shape
         print "image feature: ",iX.shape
         print "ans          : ",ans.shape
+        """
         return qn, mask, iX, ans
     
+    def get_one_hot(self, qn, one_hot_size):
+        output = np.zeros((qn.shape[0], qn.shape[1], one_hot_size), dtype='uint8')
+        for i in range(qn.shape[0]):
+            output[i] = load_data.one_hot(qn[i],one_hot_size)
+        return output
+ 
     def get_question_data(self, division_id, mode):
         return self.questions[mode][division_id] \
              , self.mask[mode][division_id]
@@ -302,7 +307,20 @@ class vqa_type:
             f2s = os.path.join(self.config["vqa_model_folder"], str(mode) + '_feature' + str(i))
             np.save(f2s,self.get_image_data(image_ids[s:e]),mode)
             print "Saving features to %s ..."%str(f2s)
-
+    
+    def unigram_dist(self):
+        hist = {}
+        total_ans = 0
+        for mode in self.answers.keys():
+            total_ans += len(self.answers[mode])
+            for a in self.answers[mode]:
+                if a in hist.keys():
+                    hist[a] +=1
+                else:
+                    hist[a] = 1
+        hist = dict([ (k,float(v)/total_ans) for k,v in hist.items() ])
+        output = [ -1.0*hist[a] for a in range(len(self.avocab))] 
+        return output
 
 
 
