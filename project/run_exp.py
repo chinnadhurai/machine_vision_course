@@ -33,9 +33,11 @@ def get_config(image_mode='real'):
     config['vqa_model_folder']          = os.path.join( config["vgg_features_folder"], 'vqa_modelA')
     config['cleaned_images_folder']     = os.path.join( config["real_abstract_images"], 'cleaned_images')
     config['saved_params']              = os.path.join( config['opath'], 'params')
+    config['load_from_saved_params']    = False
+    config['checkpoint_interval']       = 60 #mins
     config['fine_tune_vgg']             = False
-    config['train_data_percent']        = 5
-    config['epochs']                    = 25
+    config['train_data_percent']        = 100
+    config['epochs']                    = 100
     config['mlp_input_dim']             = 1024
     config['lstm_hidden_dim']           = 300
     config['bptt_trunk_steps']          = -1
@@ -75,6 +77,6 @@ if __name__ == "__main__":
         vqa_classifier = vqa_type(config)
         vqa_classifier.train()
     else:
-        print "Arguments can either be q1 or q2"
+        print "Arguments needs either be chunk / vocab / gen_vgg_features / vqa_train"
         exit(0)
 

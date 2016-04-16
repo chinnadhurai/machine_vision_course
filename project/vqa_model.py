@@ -26,6 +26,7 @@ import gzip
 import nltk
 import json
 import time
+import datetime
 
 class vqa_type:
     def __init__(self, config):
@@ -38,7 +39,8 @@ class vqa_type:
         self.params                     = []
         pprint(config)
         print "\n----------------------"
-        print "\n Preping data set..."
+        print "\nPreping data set..."
+        self.timer = l.timer_type()
         pfile = os.path.join(self.config['questions_folder'], "qvocab.zip")
         self.qvocab, self.qword, self.max_qlen = pickle.load( gzip.open( pfile, "rb" ) )
         pfile = os.path.join(self.config['annotations_folder'], "ans_vocab.zip")
@@ -54,6 +56,7 @@ class vqa_type:
         self.questions = {}
         self.mask= {}
         self.divisions = {}
+        self.saved_params = {}
         for mode in ['train','val']:
             self.qdict[mode] = load_data.load_questions(self.config['questions_folder'], mode=mode)
             self.image_ids[mode], self.question_ids[mode], self.answer_ids[mode] = self.get_image_question_ans_ids(mode)
@@ -63,11 +66,32 @@ class vqa_type:
         self.p_ans_vector = self.unigram_dist()
         print "Initialization done ..."
         
-    def add_to_param_list(self,l_params):
+    def add_to_param_list(self,network,l_params,param_type):
         for p in l_params:
             self.params.append(p)
+        local_dict = {}
+        l.get_uid()
+        uid = now.strftime("%Y_%m_%d_%H_%M")
+        local_dict['params'] = l_params
+        uid = self.timer.get_id()
+        local_dict['f2s'] = os.path.join(self.config['saved_params'], str(param_type) + "_params_" + uid)
+        self.saved_params[param_type] = local_dict
+        self.load_saved_params(network,param_type)
+    
+    def dump_current_params(self):
+        print "Saving current params to ", self.config['saved_params']
+        for k,v in self.saved_params.items():
+            params = [p.get_value() for p in v['params']]
+            np.save(v['f2s'],params)
 
-    def load_params(self):
+    def load_saved_params(self, network, param_type):
+        if not self.config['load_from_saved_params']:
+            return
+        print "Loading %s params from %s"%(param_type,self.saved_params[param_type]['f2s'])
+        params = np.load(self.saved_params[param_type]['f2s'])
+        lasagne.layers.set_all_param_values(network, params)
+
+    def load_vgg_params(self):
         param_loc = self.config['vgg_params']
         params = l.load_params_pickle(param_loc)
         return params['param values']
@@ -89,7 +113,7 @@ class vqa_type:
                                           mask_input            = l_mask
                                          )
         l_dense = lasagne.layers.DenseLayer(l_lstm, num_units=self.config['mlp_input_dim'])
-        self.add_to_param_list( lasagne.layers.get_all_params(l_dense) )
+        self.add_to_param_list( l_dense, lasagne.layers.get_all_params(l_dense) , param_type='qlstm')
         net  = {'l_in':l_in, 'l_lstm':l_lstm, 'l_dense':l_dense}
         print "Done building question LSTM ..."
         return net
@@ -102,7 +126,7 @@ class vqa_type:
                 net['l_in'],
                 num_units=self.config['mlp_input_dim'],
                 nonlinearity=lasagne.nonlinearities.softmax)
-        self.add_to_param_list( lasagne.layers.get_all_params(net['l_out']) )
+        self.add_to_param_list( net['l_out'], lasagne.layers.get_all_params(net['l_out']), param_type='vgg2mlp' )
         print "Done building vgg feature MLP ..."
         return net
 
@@ -119,7 +143,7 @@ class vqa_type:
                 nonlinearity=lasagne.nonlinearities.softmax,
                 W = lasagne.init.Constant(0.),
                 b = lasagne.init.Categorical(self.p_ans_vector))
-        self.add_to_param_list( lasagne.layers.get_all_params(net['l_out']) )
+        self.add_to_param_list( net['l_out'], lasagne.layers.get_all_params(net['l_out']), param_type='final_mlp' )
         print "Done building final MLP ..."
         return net
         
@@ -129,12 +153,12 @@ class vqa_type:
             iX = self.iX
         else:
             self.X_image = T.ftensor4()
-            params = self.load_params()
+            params = self.load_vgg_params()
             network = vgg_16.build_model(self.X_image)
             self.net_vgg = network
             iX = lasagne.layers.get_output(network['fc8'], deterministic=True)
             lasagne.layers.set_all_param_values(network['fc8'],params)
-            self.add_to_param_list(params)
+            self.add_to_param_list(network, lasagne.layers.get_all_param_values(network['fc8']), param_type='vgg16')
         return self.build_model_util(iX)
     
     def build_model_util(self,iX):
@@ -161,25 +185,31 @@ class vqa_type:
         predict = theano.function([qX, mask, iX], test_prediction, allow_input_downcast=True)
         print "Done Compiling final model..."
         return train,predict
-
+    
     def train(self):
         train, predict = self.build_model()
         num_training_divisions  = int(self.num_division *self.config['train_data_percent']/100)
         num_val_divisions       = num_training_divisions 
+        self.timer_set_checkpoint('param_save')
         for epoch in range(self.config['epochs']):
-            train_accuracy,total,s_time = 0,0,time.time()
+            train_accuracy,total = 0,0
+            self.timer.set_checkpoint('train') 
+            if self.timer.expired('param_save', self.config['checkpoint_interval']):
+                self.dump_current_params()
+                self.timer_set_checkpoint('param_save')
             for division_id in range(num_training_divisions):
                 #print " epoch percent done",*100/num_training_divisions)
                 qn, mask, iX, ans = self.get_data(division_id, mode='train')
                 train_accuracy += self.train_util(qn, mask, iX, ans, train, predict)
                 total += ans.shape[0]
-            print"Epoch : %d, Training accuracy     : %f, time taken (mins) : %f"%(epoch, train_accuracy*100 / total, (time.time() - s_time)/60)  
-            val_accuracy,total,s_time = 0,0,time.time()            
+            print"Epoch : %d, Training accuracy     : %f, time taken (mins) : %f"%(epoch, train_accuracy*100 / total,self.timer.print_checkpoint('train'))
+            val_accuracy,total = 0,0
+            self.timer.set_checkpoint('val')
             for division_id in range(num_val_divisions):
                 qn, mask, iX, ans = self.get_data(division_id, mode='val')
                 val_accuracy += self.val_util(qn, mask, iX, ans, train, predict)                       
                 total += ans.shape[0]
-            print "Epoch : %d, Val accuracy         : %f, time taken (mins) : %f"%(epoch, val_accuracy*100 / total, (time.time() - s_time)/60 )
+            print "Epoch : %d, Val accuracy         : %f, time taken (mins) : %f"%(epoch, val_accuracy*100 / total, self.timer.print_checkpoint('val') )
     
     def train_util(self, qX, mask, iX, Y, train, predict):
         mb_size = self.config['batch_size']

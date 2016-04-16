@@ -14,6 +14,8 @@ import gzip
 import h5py
 import sys
 sys.dont_write_bytecode = True
+import time
+import datetime
 
 srng = RandomStreams()
 
@@ -135,3 +137,30 @@ def load_h5(filepath):
 
 def make_folder(directory):
     return
+
+class timer_type:
+    def __init__(self):
+        self.time_inst  = {}
+        self.time_taken_mins = {}
+        self.d_factor = {'sec':1,'min':60,'hour':3600}
+        print "Timer created ..."
+
+    def set_checkpoint(self,t_id):
+        self.time_inst[t_id] = time.time()
+
+    def print_checkpoint(self,t_id,ttype='min'):
+        """
+        ttype = 'sec' / 'min' / 'hour'
+        """
+        total = time.time() - self.time_inst[t_id]
+        self.time_taken_mins[t_id] = total/self.d_factor[ttype]
+        return total/self.d_factor[ttype]
+
+    def expired(self,t_id,threshold,ttype='min'):
+        total = time.time() - self.time_inst[t_id]
+        total = total/self.d_factor[ttype]
+        return total > threshold
+        
+    def get_uid(self):
+        now = datetime.datetime.now()
+        return str(now.strftime("%Y_%m_%d_%H_%M"))
