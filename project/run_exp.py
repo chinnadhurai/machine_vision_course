@@ -45,7 +45,7 @@ def get_config(image_mode='real'):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print "Arguments needs either be chunk / dummy / q1 or q2, NUM_TRAINING, ALPHA"
+        print "Arguments needs either be chunk / dummy / gen_vgg_features / build_lstm" 
         exit(0)
     elif sys.argv[1] == "vocab":
         config = get_config() 
@@ -53,12 +53,13 @@ if __name__ == "__main__":
         l.get_vocab(ifolder)
     elif sys.argv[1] == "chunk":
         config = get_config() 
-        ifolder = os.path.join( config["dpath"],"real_images/")    
+        ifolder = config['real_abstract_images']
         afolder = os.path.join( ifolder,"annotations")
         qfolder = os.path.join( ifolder,"questions")
         modes = ['train','val','test']
         for mode in modes:
-            v,w = l.load_coco_data(ifolder, os.path.join(ifolder, "cleaned_images"), mode=mode)
+            print mode
+            l.load_coco_data(ifolder, os.path.join(ifolder, "cleaned_images1"), mode=mode)
     elif sys.argv[1] == "dummy":
         config = get_config() 
         ifolder = os.path.join( config["dpath"],"real_images")            

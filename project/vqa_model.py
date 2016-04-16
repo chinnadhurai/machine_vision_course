@@ -1,4 +1,4 @@
-__author__ = 'chinna'
+_author__ = 'chinna'
 import theano
 from theano import tensor as T
 import numpy as np
@@ -113,6 +113,7 @@ class vqa_type:
                 net['l_in'],
                 num_units=len(self.avocab),
                 nonlinearity=lasagne.nonlinearities.softmax,
+                W = lasagne.init.Constant(0.),
                 b = lasagne.init.Categorical(self.p_ans_vector))
         self.add_to_param_list( lasagne.layers.get_all_params(net['l_out']) )
         print "Done building final MLP ..."
@@ -179,8 +180,16 @@ class vqa_type:
         print [self.aword[i] for i in pred][:10]
         l.print_overwrite("Training accuracy(in  % )           :", cumsum*100 / Y.shape[0])     
 
-    
-
+    def store_params(self, params):
+        import datetime
+        now = datetime.datetime.now()
+        uid = now.strftime("%Y_%m_%d_%H_%M")
+        f2s = os.path.join(self.config["vqa_model_folder"],"params_"+uid)
+        print "Saving params to ", f2s
+        np.save(f2s, params)    
+        
+        
+        
     #************************************************************
 
     #            TRAINING / VAL DATA RETRIVAL APIS     
@@ -319,8 +328,5 @@ class vqa_type:
                 else:
                     hist[a] = 1
         hist = dict([ (k,float(v)/total_ans) for k,v in hist.items() ])
-        output = [ -1.0*hist[a] for a in range(len(self.avocab))] 
+        output = [ np.log(hist[a]) for a in range(len(self.avocab))] 
         return output
-
-
-
