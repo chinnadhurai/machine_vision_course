@@ -32,8 +32,9 @@ def get_config(image_mode='real'):
     config['vgg_features_folder']       = os.path.join( config["real_abstract_images"], 'vgg_features')
     config['vqa_model_folder']          = os.path.join( config["vgg_features_folder"], 'vqa_modelA')
     config['cleaned_images_folder']     = os.path.join( config["real_abstract_images"], 'cleaned_images')
+    config['saved_params']              = os.path.join( config['opath'], 'params')
     config['fine_tune_vgg']             = False
-    config['train_data_percent']        = 60
+    config['train_data_percent']        = 5
     config['epochs']                    = 25
     config['mlp_input_dim']             = 1024
     config['lstm_hidden_dim']           = 300
@@ -45,12 +46,8 @@ def get_config(image_mode='real'):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print "Arguments needs either be chunk / dummy / gen_vgg_features / build_lstm" 
+        print "Arguments needs either be chunk / vocab / gen_vgg_features / vqa_train" 
         exit(0)
-    elif sys.argv[1] == "vocab":
-        config = get_config() 
-        ifolder = os.path.join( config["dpath"],"real_images/")
-        l.get_vocab(ifolder)
     elif sys.argv[1] == "chunk":
         config = get_config() 
         ifolder = config['real_abstract_images']
@@ -60,26 +57,23 @@ if __name__ == "__main__":
         for mode in modes:
             print mode
             l.load_coco_data(ifolder, os.path.join(ifolder, "cleaned_images1"), mode=mode)
-    elif sys.argv[1] == "dummy":
+    elif sys.argv[1] == "vocab":
         config = get_config() 
         ifolder = os.path.join( config["dpath"],"real_images")            
         afolder = os.path.join( ifolder,"annotations")                      
         qfolder = os.path.join( ifolder,"questions") 
-        #l.load_annotations(afolder)
         l.get_answer_vocab(afolder)
-        #l.vqa_api(qfolder,afolder)
-        #l.get_question_vocab(qfolder)
+        l.get_question_vocab(qfolder)
     elif sys.argv[1] == "gen_vgg_features":
         config = get_config()
         vgg_feature_extractor = vgg_feature(config)
         features_folder = config['vgg_features_folder']
         image_array_folder = config['image_array_folder']
         vgg_feature_extractor.create_vgg_feature_dataset(image_array_folder, features_folder)      
-    elif sys.argv[1] == 'build_lstm':
+    elif sys.argv[1] == 'vqa_train':
         config = get_config()
         vqa_classifier = vqa_type(config)
         vqa_classifier.train()
-        #vqa_classifier.get_train_data()
     else:
         print "Arguments can either be q1 or q2"
         exit(0)

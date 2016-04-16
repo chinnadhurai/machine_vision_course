@@ -132,3 +132,6 @@ def load_h5(filepath):
         params.append(h5f[key][:])
     h5f.close()
     return params
+
+def make_folder(directory):
+    return

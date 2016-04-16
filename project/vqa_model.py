@@ -25,12 +25,13 @@ from pprint import pprint
 import gzip
 import nltk
 import json
+import time
 
 class vqa_type:
     def __init__(self, config):
         print "Configuration :"
         self.config                     = config
-        self.qX                         = T.ftensor3()
+        self.qX                         = T.imatrix()#T.ftensor3()
         self.lstm_mask                  = T.imatrix()
         self.iX                         = T.fmatrix()
         self.Y                          = T.ivector()
@@ -74,10 +75,13 @@ class vqa_type:
     def build_question_lstm(self, input_var, mask=None):
         input_dim, seq_len = len(self.qvocab), self.max_qlen
         # (batch size, max sequence length, number of features)
-        l_in = lasagne.layers.InputLayer(shape=(None, seq_len, input_dim),
+     
+        l_in = lasagne.layers.InputLayer(shape=(None, seq_len),#, input_dim),
                                             input_var=input_var)
+        lstm_params = lasagne.layers.get_all_params(l_in)
+        l_embd = lasagne.layers.EmbeddingLayer(l_in, input_dim, self.config['lstm_hidden_dim'])
         l_mask = lasagne.layers.InputLayer(shape=(None, seq_len), input_var=mask)
-        l_lstm = lasagne.layers.LSTMLayer(l_in, 
+        l_lstm = lasagne.layers.LSTMLayer(l_embd, 
                                           num_units             = self.config['lstm_hidden_dim'], 
                                           only_return_final     = True,
                                           gradient_steps        = self.config['bptt_trunk_steps'],
@@ -160,15 +164,23 @@ class vqa_type:
 
     def train(self):
         train, predict = self.build_model()
-        num_training_divisions = int(self.num_division *self.config['train_data_percent']/100)
+        num_training_divisions  = int(self.num_division *self.config['train_data_percent']/100)
+        num_val_divisions       = num_training_divisions 
         for epoch in range(self.config['epochs']):
-            l.print_overwrite("epoch :",epoch)
-            print "\n"
+            train_accuracy,total,s_time = 0,0,time.time()
             for division_id in range(num_training_divisions):
                 #print " epoch percent done",*100/num_training_divisions)
                 qn, mask, iX, ans = self.get_data(division_id, mode='train')
-                self.train_util(qn, mask, iX, ans, train, predict)
-        
+                train_accuracy += self.train_util(qn, mask, iX, ans, train, predict)
+                total += ans.shape[0]
+            print"Epoch : %d, Training accuracy     : %f, time taken (mins) : %f"%(epoch, train_accuracy*100 / total, (time.time() - s_time)/60)  
+            val_accuracy,total,s_time = 0,0,time.time()            
+            for division_id in range(num_val_divisions):
+                qn, mask, iX, ans = self.get_data(division_id, mode='val')
+                val_accuracy += self.val_util(qn, mask, iX, ans, train, predict)                       
+                total += ans.shape[0]
+            print "Epoch : %d, Val accuracy         : %f, time taken (mins) : %f"%(epoch, val_accuracy*100 / total, (time.time() - s_time)/60 )
+    
     def train_util(self, qX, mask, iX, Y, train, predict):
         mb_size = self.config['batch_size']
         for s,e in zip( range(0, len(qX), mb_size), range(mb_size, len(qX), mb_size)):
@@ -177,8 +189,16 @@ class vqa_type:
         for s,e in zip( range(0, len(qX), mb_size), range(mb_size, len(qX), mb_size)):
             pred = predict(qX[s:e], mask[s:e] ,iX[s:e])
             cumsum += np.sum(pred == Y[s:e])
-        print [self.aword[i] for i in pred][:10]
-        l.print_overwrite("Training accuracy(in  % )           :", cumsum*100 / Y.shape[0])     
+        return cumsum
+        l.print_overwrite("Training accuracy(in  % ):", cumsum*100 / Y.shape[0])     
+
+    def val_util(self, qX, mask, iX, Y, train, predict):
+        cumsum,total = 0,0
+        mb_size = self.config['batch_size']
+        for s,e in zip( range(0, len(qX), mb_size), range(mb_size, len(qX), mb_size)):
+            pred = predict(qX[s:e], mask[s:e] ,iX[s:e])
+            cumsum += np.sum(pred == Y[s:e])
+        return cumsum
 
     def store_params(self, params):
         import datetime
@@ -201,7 +221,7 @@ class vqa_type:
         qn, mask    = self.get_question_data(division_num, mode)    
         ans         = self.get_answer_data(division_num, mode)
         iX          = self.get_image_features(division_num, mode)
-        qn = self.get_one_hot(qn, one_hot_size=len(self.qvocab))
+        #qn = self.get_one_hot(qn, one_hot_size=len(self.qvocab))
         """
         print "Training data shapes ..."
         print "Question     : ",qn.shape
