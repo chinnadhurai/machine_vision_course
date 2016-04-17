@@ -27,6 +27,7 @@ import nltk
 import json
 import time
 import datetime
+from nltk.tokenize import WordPunctTokenizer
 
 class vqa_type:
     def __init__(self, config):
@@ -41,7 +42,8 @@ class vqa_type:
         print "\n----------------------"
         print "\nPreping data set..."
         self.timer = l.timer_type()
-        pfile = os.path.join(self.config['questions_folder'], "qvocab.zip")
+        self.tokenizer = WordPunctTokenizer()
+        pfile = os.path.join(self.config['questions_folder'], "qn_vocab.zip")
         self.qvocab, self.qword, self.max_qlen = pickle.load( gzip.open( pfile, "rb" ) )
         pfile = os.path.join(self.config['annotations_folder'], "ans_vocab.zip")
         self.avocab, self.aword = pickle.load( gzip.open( pfile, "rb" ) )
@@ -57,12 +59,14 @@ class vqa_type:
         self.mask= {}
         self.divisions = {}
         self.saved_params = {}
+        self.timer.set_checkpoint('init')
         for mode in ['train','val']:
             self.qdict[mode] = load_data.load_questions(self.config['questions_folder'], mode=mode)
-            self.image_ids[mode], self.question_ids[mode], self.answer_ids[mode] = self.get_image_question_ans_ids(mode)
+            self.image_ids[mode], self.question_ids[mode], self.answer_ids[mode] = self.get_image_question_ans_ids(mode, save_ids=False)
             mbsize = len(self.image_ids[mode]) // self.num_division
             self.divisions[mode] = zip(range(0, len(self.image_ids[mode]), mbsize), range(mbsize, len(self.image_ids[mode]), mbsize))
-            self.store_question_data(mode)
+            self.store_question_data(mode, save_qns=False)
+        print "init time taken", self.timer.print_checkpoint('init')
         self.p_ans_vector = self.unigram_dist()
         print "Initialization done ..."
         
@@ -70,10 +74,8 @@ class vqa_type:
         for p in l_params:
             self.params.append(p)
         local_dict = {}
-        l.get_uid()
-        uid = now.strftime("%Y_%m_%d_%H_%M")
         local_dict['params'] = l_params
-        uid = self.timer.get_id()
+        uid = self.timer.get_uid()
         local_dict['f2s'] = os.path.join(self.config['saved_params'], str(param_type) + "_params_" + uid)
         self.saved_params[param_type] = local_dict
         self.load_saved_params(network,param_type)
@@ -137,8 +139,15 @@ class vqa_type:
         net = {}
         net['l_in'] = lasagne.layers.InputLayer(shape=(None,self.config['mlp_input_dim']),
                                          input_var=input_var)
+        net['l_h1'] =  lasagne.layers.DenseLayer( net['l_in'],
+                                                  num_units=1000,
+                                                  nonlinearity=lasagne.nonlinearities.tanh)
+        
+        net['l_h2'] =  lasagne.layers.DenseLayer( net['l_h1'],
+                                                  num_units=1000,
+                                                  nonlinearity=lasagne.nonlinearities.tanh)
         net['l_out'] = lasagne.layers.DenseLayer(
-                net['l_in'],
+                net['l_h2'],
                 num_units=len(self.avocab),
                 nonlinearity=lasagne.nonlinearities.softmax,
                 W = lasagne.init.Constant(0.),
@@ -190,7 +199,7 @@ class vqa_type:
         train, predict = self.build_model()
         num_training_divisions  = int(self.num_division *self.config['train_data_percent']/100)
         num_val_divisions       = num_training_divisions 
-        self.timer_set_checkpoint('param_save')
+        self.timer.set_checkpoint('param_save')
         for epoch in range(self.config['epochs']):
             train_accuracy,total = 0,0
             self.timer.set_checkpoint('train') 
@@ -230,16 +239,6 @@ class vqa_type:
             cumsum += np.sum(pred == Y[s:e])
         return cumsum
 
-    def store_params(self, params):
-        import datetime
-        now = datetime.datetime.now()
-        uid = now.strftime("%Y_%m_%d_%H_%M")
-        f2s = os.path.join(self.config["vqa_model_folder"],"params_"+uid)
-        print "Saving params to ", f2s
-        np.save(f2s, params)    
-        
-        
-        
     #************************************************************
 
     #            TRAINING / VAL DATA RETRIVAL APIS     
@@ -280,7 +279,10 @@ class vqa_type:
         f2l = os.path.join(self.config["vqa_model_folder"], f2l)
         return np.load(f2l)
 
-    def store_question_data(self, mode, save_image_features=False):
+    def store_question_data(self, mode, save_qns, save_image_features=False):
+        if not save_qns:
+            self.questions[mode], self.mask[mode] = self.save_or_load_qn_mask('load',mode)
+            return
         qdict = self.qdict[mode]
         question_ids = self.question_ids[mode]
         divisions = self.divisions[mode]
@@ -291,8 +293,8 @@ class vqa_type:
             mask = np.zeros((len(question_ids[s:e]), self.max_qlen), dtype='uint32')
             for itr,q_id in enumerate(question_ids[s:e]):
                 q = qdict[q_id]['question']
-                l_a = [ self.qvocab[w] for w in nltk.word_tokenize(str(q)) ]
-                q_a[itr,:len(l_a)] = np.array(l_a, dtype='uint32')
+                l_a = [ self.qvocab[w.lower()] for w in self.tokenizer.tokenize(str(q)) if w.lower() in self.qvocab.keys() ]
+                q_a[itr,:len(l_a)] = np.array(l_a[:self.max_qlen], dtype='uint32')
                 mask[itr,:len(l_a)] = 1
             qn_output.append(q_a)
             mask_output.append(mask)
@@ -300,10 +302,25 @@ class vqa_type:
         self.mask[mode]         = np.asarray(mask_output)
         print "questions shape      :", self.questions[mode].shape
         print "mask shape           :", self.mask[mode].shape
+        self.save_or_load_qn_mask('save', mode, self.questions[mode], self.mask[mode])
         if save_image_features:
             self.save_image_data(self.image_ids[mode], self.num_division ,mode)
 
-    def get_image_question_ans_ids(self,mode):
+    def save_or_load_qn_mask(self,mode,train_mode,qn=None,mask=None):
+        f2s_q = os.path.join(self.config['questions_folder'], str(train_mode) + "_questions")
+        f2l_m = os.path.join(self.config['questions_folder'], str(train_mode) + "_mask")
+        if mode=='save':
+            print "Saving files to ", f2s_q
+            np.save(f2s_q, qn)
+            np.save(f2l_m, mask)
+        else:
+            f2s_q += ".npy"
+            f2l_m += ".npy"
+            return np.load(f2s_q), np.load(f2l_m)
+    
+    def get_image_question_ans_ids(self,mode,save_ids):
+        #if not save_ids:
+        #    return self.save_or_load_ids('load',mode)
         afile = self.get_file(self.config["annotations_folder"],mode=mode)
         answers = json.load(open(afile, 'r'))['annotations']
         self.answers[mode] = []
@@ -311,19 +328,32 @@ class vqa_type:
         question_ids = []
         answer_ids = []
         for a_id,a in enumerate(answers):
-            qa = nltk.word_tokenize(str(a['multiple_choice_answer']))
+            qa = self.tokenizer.tokenize(str(a['multiple_choice_answer']))
             if not len(qa)==1:
                 continue
             answer_ids.append(a_id)
-            self.answers[mode].append(self.avocab[qa[0]])
+            ans = 0
+            if qa[0].lower() in self.avocab.keys():
+                ans = self.avocab[qa[0].lower()]
+            self.answers[mode].append(ans)
             image_ids.append(a['image_id'])
             question_ids.append(a['question_id'])
         self.answers[mode] = np.asarray(self.answers[mode])
         assert len(image_ids) == len(question_ids)
         assert len(image_ids) == len(answer_ids)
-
+        self.save_or_load_ids('save',mode,image_ids, question_ids, answer_ids)
         return image_ids, question_ids, answer_ids
-
+    
+    def save_or_load_ids(self, mode, train_mode, im_id=None, q_id=None, a_id=None):
+        f2s_i = os.path.join(self.config['questions_folder'], str(train_mode) + "_images_ids")
+        f2s_q = os.path.join(self.config['questions_folder'], str(train_mode) + "_qns_ids")
+        f2s_a = os.path.join(self.config['questions_folder'], str(train_mode) + "_ans_ids")
+        if mode=='save':
+            np.save(f2s_i,im_id)
+            np.save(f2s_q,q_id)
+            np.save(f2s_a,a_id)
+        else:
+            return np.load(f2s_i+".npy"), np.load(f2s_q+".npy"), np.load(f2s_a+".npy")
     def get_image_file_id(self,image_id,image_db=None):
         for file_id, ilist in enumerate(image_db):
             try:

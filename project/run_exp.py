@@ -70,7 +70,7 @@ if __name__ == "__main__":
         config = get_config()
         vgg_feature_extractor = vgg_feature(config)
         features_folder = config['vgg_features_folder']
-        image_array_folder = config['image_array_folder']
+        image_array_folder = config['cleaned_images_folder']
         vgg_feature_extractor.create_vgg_feature_dataset(image_array_folder, features_folder)      
     elif sys.argv[1] == 'vqa_train':
         config = get_config()

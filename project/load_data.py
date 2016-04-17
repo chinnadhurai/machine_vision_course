@@ -19,6 +19,7 @@ import json
 from pprint import pprint
 import re
 import nltk
+from nltk.tokenize import WordPunctTokenizer
 from vqa import VQA
 import gzip
 
@@ -266,30 +267,6 @@ def load_coco_data ( in_folder, \
     np.save(filepath, l_image_id)
     print "Saving image ids to ", filepath
 
-
-def get_vocab(folder):
-    wc = 0
-    vocab = {}
-    word = {}
-    for s_type in ['annotations', 'questions']:
-        s_folder = os.path.join(folder,[fr for fr in listdir(folder) if s_type in str(fr)][0])
-        print s_folder
-        for f in listdir(s_folder):
-            dataset = json.load(open(os.path.join(s_folder,f), 'r'))
-            for q in dataset[s_type]:
-                for key, item in q.items():
-                    print s_type, key 
-                    qa =" ".join(re.findall("[a-zA-Z]+", str(item)))
-                    for w in qa.lower().split():
-                        if w not in vocab:
-                            vocab[w] = wc
-                            word[wc] = w
-                            wc+= 1           
-            print "...", f, wc  
-    print len(vocab)
-    return vocab, word
-
-
 def get_answer_vocab(folder):
     wc = 0
     vocab = {}
@@ -299,10 +276,13 @@ def get_answer_vocab(folder):
     total_ans = 0
     overlap = 0
     file_list = ['mscoco_train2014_annotations.json', 'mscoco_val2014_annotations.json']
-    for itr,f in enumerate(file_list):# listdir(folder):
+    tokenizer = WordPunctTokenizer()
+    for itr,f in enumerate(listdir(folder)):
+        if str(f).find('train') == -1:
+            continue
         dataset = json.load(open(os.path.join(folder,f), 'r'))
         for q in dataset['annotations']:
-            qa = nltk.word_tokenize(str(q['multiple_choice_answer']))
+            qa = tokenizer.tokenize(str(q['multiple_choice_answer']))
             if not len(qa) == 1:
                 continue
             oneword_ans += int( len(qa) == 1)
@@ -310,6 +290,7 @@ def get_answer_vocab(folder):
             if max_qlen < len(qa):
                 max_qlen = len(qa)
             for w in qa:
+                w = w.lower()
                 if w in vocab and itr > 0:
                     overlap+=1
                 if w not in vocab:
@@ -329,19 +310,26 @@ def get_question_vocab(folder):
     vocab = {}
     word = {}
     max_qlen = 0
+    tokenizer = WordPunctTokenizer()
     for f in listdir(folder):
+        if str(f).find('train') == -1:
+            continue
         dataset = json.load(open(os.path.join(folder,f), 'r'))
         for q in dataset['questions']:
-            qa = nltk.word_tokenize(str(q['question']))#" ".join(re.findall("[a-zA-Z0-9]+", str(q['question'])))
+            qa = tokenizer.tokenize(str(q['question']))#" ".join(re.findall("[a-zA-Z0-9]+", str(q['question'])))
             if max_qlen < len(qa):
                 max_qlen = len(qa)
             for w in qa:
-                if w not in vocab:
-                    vocab[w] = wc
-                    word[wc] = w
+                w_lower = w.lower()
+                if w_lower not in vocab:
+                    vocab[w_lower] = wc
+                    word[wc] = w_lower
                     wc+= 1
         print "...", f, wc , max_qlen
     print len(vocab)
+    f2p = os.path.join(folder,"qn_vocab.zip")
+    print "Dumping pickle file to ", f2p
+    pickle.dump([vocab, word, max_qlen], gzip.open( f2p, "wb" ) )
     return vocab, word, max_qlen
 
 def load_annotations(folder, mode='val'):
@@ -358,7 +346,7 @@ def load_annotations(folder, mode='val'):
 def load_questions(folder, mode='val'):
     qfiles = listdir(folder)
     qdict = {}
-    qfiles = [i for i in qfiles if str(i).find(mode) != -1 ]
+    qfiles = [i for i in qfiles if str(i).find(mode) != -1 and i.endswith('.json')]
     for i in qfiles:
         qfile = os.path.join(folder,i)
         print "Getting questions from ", qfile
