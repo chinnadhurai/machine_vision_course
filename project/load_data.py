@@ -281,6 +281,11 @@ def get_answer_vocab(folder):
         if str(f).find('train') == -1:
             continue
         dataset = json.load(open(os.path.join(folder,f), 'r'))
+        vocab,word = get_top_answers(1000, dataset['annotations'])
+        f2p = os.path.join(folder,"top1000_ans_vocab.zip")
+        print "Dumping pickle file to ", f2p
+        pickle.dump([vocab, word], gzip.open( f2p, "wb" ) )
+        return
         for q in dataset['annotations']:
             qa = tokenizer.tokenize(str(q['multiple_choice_answer']))
             if not len(qa) == 1:
@@ -305,6 +310,33 @@ def get_answer_vocab(folder):
     return vocab, word
 
 
+def get_top_answers(k, dataset):
+    hist = {}
+    vocab = set()
+    tokenizer = WordPunctTokenizer()
+    for q in dataset:
+        qa = tokenizer.tokenize(str(q['multiple_choice_answer']))
+        if len(qa) !=1:
+            continue 
+        qa = qa[0].lower()
+        if qa in hist.keys():
+            hist[qa] +=1
+        else:
+            hist[qa] = 1
+            vocab.add(qa)
+    k_count_thres = sorted(hist.values(),reverse=True)[k-1]
+    print k_count_thres
+    top_k_vocab = {}
+    top_k_word = {}
+    wc=0
+    for w in vocab:
+        if hist[w] >= k_count_thres and wc < k:
+            top_k_vocab[w] = wc
+            top_k_word[wc] = w
+            wc+=1
+    print len(top_k_vocab)
+    return top_k_vocab,top_k_word
+
 def get_question_vocab(folder):
     wc = 0
     vocab = {}
@@ -312,7 +344,7 @@ def get_question_vocab(folder):
     max_qlen = 0
     tokenizer = WordPunctTokenizer()
     for f in listdir(folder):
-        if str(f).find('train') == -1:
+        if str(f).find('train') == -1 or not f.endswith('.json'):
             continue
         dataset = json.load(open(os.path.join(folder,f), 'r'))
         for q in dataset['questions']:

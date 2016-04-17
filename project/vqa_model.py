@@ -45,7 +45,7 @@ class vqa_type:
         self.tokenizer = WordPunctTokenizer()
         pfile = os.path.join(self.config['questions_folder'], "qn_vocab.zip")
         self.qvocab, self.qword, self.max_qlen = pickle.load( gzip.open( pfile, "rb" ) )
-        pfile = os.path.join(self.config['annotations_folder'], "ans_vocab.zip")
+        pfile = os.path.join(self.config['annotations_folder'], "top1000_ans_vocab.zip")
         self.avocab, self.aword = pickle.load( gzip.open( pfile, "rb" ) )
         print "Answer vocab size    :", len(self.avocab)
         print "question vocab size  :", len(self.qvocab)
@@ -60,12 +60,13 @@ class vqa_type:
         self.divisions = {}
         self.saved_params = {}
         self.timer.set_checkpoint('init')
+        save_qn_ans = True
         for mode in ['train','val']:
             self.qdict[mode] = load_data.load_questions(self.config['questions_folder'], mode=mode)
-            self.image_ids[mode], self.question_ids[mode], self.answer_ids[mode] = self.get_image_question_ans_ids(mode, save_ids=False)
+            self.image_ids[mode], self.question_ids[mode], self.answer_ids[mode] = self.get_image_question_ans_ids(mode, save_ids=save_qn_ans)
             mbsize = len(self.image_ids[mode]) // self.num_division
             self.divisions[mode] = zip(range(0, len(self.image_ids[mode]), mbsize), range(mbsize, len(self.image_ids[mode]), mbsize))
-            self.store_question_data(mode, save_qns=False)
+            self.store_question_data(mode, save_qns=save_qn_ans, save_image_features=save_qn_ans)
         print "init time taken", self.timer.print_checkpoint('init')
         self.p_ans_vector = self.unigram_dist()
         print "Initialization done ..."
@@ -331,11 +332,13 @@ class vqa_type:
             qa = self.tokenizer.tokenize(str(a['multiple_choice_answer']))
             if not len(qa)==1:
                 continue
-            answer_ids.append(a_id)
+            if qa[0].lower() not in self.avocab.keys() and mode == 'train':
+                continue
             ans = 0
             if qa[0].lower() in self.avocab.keys():
                 ans = self.avocab[qa[0].lower()]
             self.answers[mode].append(ans)
+            answer_ids.append(a_id)
             image_ids.append(a['image_id'])
             question_ids.append(a['question_id'])
         self.answers[mode] = np.asarray(self.answers[mode])
@@ -354,6 +357,7 @@ class vqa_type:
             np.save(f2s_a,a_id)
         else:
             return np.load(f2s_i+".npy"), np.load(f2s_q+".npy"), np.load(f2s_a+".npy")
+    
     def get_image_file_id(self,image_id,image_db=None):
         for file_id, ilist in enumerate(image_db):
             try:
@@ -394,7 +398,7 @@ class vqa_type:
             i += 1
             print "Saving images from %d to %d" %(s,e)
             f2s = os.path.join(self.config["vqa_model_folder"], str(mode) + '_feature' + str(i))
-            np.save(f2s,self.get_image_data(image_ids[s:e]),mode)
+            np.save(f2s,self.get_image_data(image_ids[s:e],mode))
             print "Saving features to %s ..."%str(f2s)
     
     def unigram_dist(self):
