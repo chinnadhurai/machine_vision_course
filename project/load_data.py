@@ -267,54 +267,17 @@ def load_coco_data ( in_folder, \
     np.save(filepath, l_image_id)
     print "Saving image ids to ", filepath
 
-def get_answer_vocab(folder):
-    wc = 0
-    vocab = {}
-    word = {}
-    max_qlen = 0
-    oneword_ans = 0
-    total_ans = 0
-    overlap = 0
-    file_list = ['mscoco_train2014_annotations.json', 'mscoco_val2014_annotations.json']
-    tokenizer = WordPunctTokenizer()
+def get_answer_vocab(k, folder):
+    dataset = {}
     for itr,f in enumerate(listdir(folder)):
-        if str(f).find('train') == -1:
-            continue
-        dataset = json.load(open(os.path.join(folder,f), 'r'))
-        vocab,word = get_top_answers(1000, dataset['annotations'])
-        f2p = os.path.join(folder,"top1000_ans_vocab.zip")
-        print "Dumping pickle file to ", f2p
-        pickle.dump([vocab, word], gzip.open( f2p, "wb" ) )
-        return
-        for q in dataset['annotations']:
-            qa = tokenizer.tokenize(str(q['multiple_choice_answer']))
-            if not len(qa) == 1:
-                continue
-            oneword_ans += int( len(qa) == 1)
-            total_ans += 1
-            if max_qlen < len(qa):
-                max_qlen = len(qa)
-            for w in qa:
-                w = w.lower()
-                if w in vocab and itr > 0:
-                    overlap+=1
-                if w not in vocab:
-                    vocab[w] = wc
-                    word[wc] = w
-                    wc+= 1
-        print "...", f, wc , max_qlen, oneword_ans, total_ans
-    print len(vocab), "overlap:", overlap
-    f2p = os.path.join(folder,"ans_vocab.zip")
-    print "Dumping pickle file to ", f2p
-    pickle.dump([vocab, word], gzip.open( f2p, "wb" ) )
-    return vocab, word
-
-
-def get_top_answers(k, dataset):
+        if str(f).find('train') != -1:
+            dataset['train'] = json.load(open(os.path.join(folder,f), 'r'))
+        if str(f).find('val') != -1:
+            dataset['val'] = json.load(open(os.path.join(folder,f), 'r'))
     hist = {}
     vocab = set()
     tokenizer = WordPunctTokenizer()
-    for q in dataset:
+    for q in dataset['train']['annotations']:
         qa = tokenizer.tokenize(str(q['multiple_choice_answer']))
         if len(qa) !=1:
             continue 
@@ -335,6 +298,33 @@ def get_top_answers(k, dataset):
             top_k_word[wc] = w
             wc+=1
     print len(top_k_vocab)
+    print top_k_vocab['yes'], top_k_vocab['no']
+    print hist['yes'], hist['no']
+    f2p = os.path.join(folder,"top1000_ans_vocab.zip")
+    print "Dumping pickle file to ", f2p
+    pickle.dump([top_k_vocab, top_k_word], gzip.open( f2p, "wb" ) )
+    mode_id_info = {}
+    for mode in ['train','val']:
+        id_info = { 'top_k_ids':[],'ans_no_ids':[] }   
+        for q in dataset[mode]['annotations']:
+            qa = tokenizer.tokenize(str(q['multiple_choice_answer']))
+            if len(qa) !=1:
+                continue 
+            qa = qa[0].lower()
+            local_dict = {}
+            if qa in top_k_vocab.keys():
+                local_dict['qn_id'] = q['question_id']
+                local_dict['im_id'] = q['image_id']
+                local_dict['type_yes_no'] = (qa == 'yes' or qa == 'no')
+                local_dict['ans_id'] = top_k_vocab[qa]
+                local_dict['ans'] = qa 
+                id_info['top_k_ids'].append(local_dict)
+                if local_dict['type_yes_no']:
+                    id_info['ans_no_ids'].append(local_dict)      
+        mode_id_info[mode] = id_info
+    f2p = os.path.join(folder,"id_info.zip")
+    print "Dumping pickle file to ", f2p
+    pickle.dump(mode_id_info, gzip.open( f2p, "wb" ) )
     return top_k_vocab,top_k_word
 
 def get_question_vocab(folder):

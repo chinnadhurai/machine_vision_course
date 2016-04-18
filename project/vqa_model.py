@@ -49,6 +49,8 @@ class vqa_type:
         self.avocab, self.aword = pickle.load( gzip.open( pfile, "rb" ) )
         print "Answer vocab size    :", len(self.avocab)
         print "question vocab size  :", len(self.qvocab)
+        pfile = os.path.join(self.config['annotations_folder'], "id_info.zip")
+        self.id_info = pickle.load( gzip.open( pfile, "rb" ) )
         self.num_division = config['num_division']
         self.qdict = {}
         self.image_ids = {}
@@ -60,7 +62,7 @@ class vqa_type:
         self.divisions = {}
         self.saved_params = {}
         self.timer.set_checkpoint('init')
-        save_qn_ans = True
+        save_qn_ans = False
         for mode in ['train','val']:
             self.qdict[mode] = load_data.load_questions(self.config['questions_folder'], mode=mode)
             self.image_ids[mode], self.question_ids[mode], self.answer_ids[mode] = self.get_image_question_ans_ids(mode, save_ids=save_qn_ans)
@@ -77,7 +79,7 @@ class vqa_type:
         local_dict = {}
         local_dict['params'] = l_params
         uid = self.timer.get_uid()
-        local_dict['f2s'] = os.path.join(self.config['saved_params'], str(param_type) + "_params_" + uid)
+        local_dict['f2s'] = os.path.join(self.config['saved_params'], str(param_type) + "_params")
         self.saved_params[param_type] = local_dict
         self.load_saved_params(network,param_type)
     
@@ -128,7 +130,7 @@ class vqa_type:
         net['l_out'] = lasagne.layers.DenseLayer(
                 net['l_in'],
                 num_units=self.config['mlp_input_dim'],
-                nonlinearity=lasagne.nonlinearities.softmax)
+                nonlinearity=lasagne.nonlinearities.rectify)
         self.add_to_param_list( net['l_out'], lasagne.layers.get_all_params(net['l_out']), param_type='vgg2mlp' )
         print "Done building vgg feature MLP ..."
         return net
@@ -140,15 +142,21 @@ class vqa_type:
         net = {}
         net['l_in'] = lasagne.layers.InputLayer(shape=(None,self.config['mlp_input_dim']),
                                          input_var=input_var)
+
         net['l_h1'] =  lasagne.layers.DenseLayer( net['l_in'],
                                                   num_units=1000,
-                                                  nonlinearity=lasagne.nonlinearities.tanh)
+                                                  nonlinearity=lasagne.nonlinearities.rectify)
+
+        net['l_h1_drop'] = lasagne.layers.DropoutLayer(net['l_h1'], p=0.5)
         
-        net['l_h2'] =  lasagne.layers.DenseLayer( net['l_h1'],
+        net['l_h2'] =  lasagne.layers.DenseLayer( net['l_h1_drop'],
                                                   num_units=1000,
-                                                  nonlinearity=lasagne.nonlinearities.tanh)
+                                                  nonlinearity=lasagne.nonlinearities.rectify)
+        
+        net['l_h2_drop'] = lasagne.layers.DropoutLayer(net['l_h2'], p=0.5)
+        
         net['l_out'] = lasagne.layers.DenseLayer(
-                net['l_h2'],
+                net['l_h2_drop'],
                 num_units=len(self.avocab),
                 nonlinearity=lasagne.nonlinearities.softmax,
                 W = lasagne.init.Constant(0.),
@@ -179,7 +187,7 @@ class vqa_type:
         vgg_out = lasagne.layers.get_output(vgg_mlp_net['l_out'])
         mlp_input = self.combine_image_question_model(ql_out, vgg_out)
         network = self.build_mlp_model(mlp_input)['l_out']
-        prediction = lasagne.layers.get_output(network, deterministic=True)
+        prediction = lasagne.layers.get_output(network, deterministic=False)
         loss = lasagne.objectives.categorical_crossentropy(prediction, Y)
         loss = loss.mean()
         params = self.params#lasagne.layers.get_all_params(network)
@@ -206,20 +214,21 @@ class vqa_type:
             self.timer.set_checkpoint('train') 
             if self.timer.expired('param_save', self.config['checkpoint_interval']):
                 self.dump_current_params()
-                self.timer_set_checkpoint('param_save')
-            for division_id in range(num_training_divisions):
+                self.timer.set_checkpoint('param_save')
+            for division_id in [1]:#range(num_training_divisions):
                 #print " epoch percent done",*100/num_training_divisions)
                 qn, mask, iX, ans = self.get_data(division_id, mode='train')
                 train_accuracy += self.train_util(qn, mask, iX, ans, train, predict)
                 total += ans.shape[0]
-            print"Epoch : %d, Training accuracy     : %f, time taken (mins) : %f"%(epoch, train_accuracy*100 / total,self.timer.print_checkpoint('train'))
+            print train_accuracy, total
+            print"Epoch : %d, Training accuracy     : %f, time taken (mins) : %f"%(epoch, train_accuracy*100.00 / total,self.timer.print_checkpoint('train'))
             val_accuracy,total = 0,0
             self.timer.set_checkpoint('val')
-            for division_id in range(num_val_divisions):
+            for division_id in [1]:#range(num_val_divisions):
                 qn, mask, iX, ans = self.get_data(division_id, mode='val')
                 val_accuracy += self.val_util(qn, mask, iX, ans, train, predict)                       
                 total += ans.shape[0]
-            print "Epoch : %d, Val accuracy         : %f, time taken (mins) : %f"%(epoch, val_accuracy*100 / total, self.timer.print_checkpoint('val') )
+            print "Epoch : %d, Val accuracy         : %f, time taken (mins) : %f"%(epoch, val_accuracy*100.00 / total, self.timer.print_checkpoint('val') )
     
     def train_util(self, qX, mask, iX, Y, train, predict):
         mb_size = self.config['batch_size']
@@ -229,6 +238,7 @@ class vqa_type:
         for s,e in zip( range(0, len(qX), mb_size), range(mb_size, len(qX), mb_size)):
             pred = predict(qX[s:e], mask[s:e] ,iX[s:e])
             cumsum += np.sum(pred == Y[s:e])
+            print [self.aword[p] for p in pred[np.random.randint(100, size=10)]]
         return cumsum
         l.print_overwrite("Training accuracy(in  % ):", cumsum*100 / Y.shape[0])     
 
@@ -322,25 +332,15 @@ class vqa_type:
     def get_image_question_ans_ids(self,mode,save_ids):
         #if not save_ids:
         #    return self.save_or_load_ids('load',mode)
-        afile = self.get_file(self.config["annotations_folder"],mode=mode)
-        answers = json.load(open(afile, 'r'))['annotations']
         self.answers[mode] = []
         image_ids = []
         question_ids = []
         answer_ids = []
-        for a_id,a in enumerate(answers):
-            qa = self.tokenizer.tokenize(str(a['multiple_choice_answer']))
-            if not len(qa)==1:
-                continue
-            if qa[0].lower() not in self.avocab.keys() and mode == 'train':
-                continue
-            ans = 0
-            if qa[0].lower() in self.avocab.keys():
-                ans = self.avocab[qa[0].lower()]
-            self.answers[mode].append(ans)
-            answer_ids.append(a_id)
-            image_ids.append(a['image_id'])
-            question_ids.append(a['question_id'])
+        for a_id,a in enumerate(self.id_info[mode]['top_k_ids']):
+            self.answers[mode].append(a['ans_id'])
+            answer_ids.append(a['ans_id'])
+            image_ids.append(a['im_id'])
+            question_ids.append(a['qn_id'])
         self.answers[mode] = np.asarray(self.answers[mode])
         assert len(image_ids) == len(question_ids)
         assert len(image_ids) == len(answer_ids)
@@ -404,7 +404,7 @@ class vqa_type:
     def unigram_dist(self):
         hist = {}
         total_ans = 0
-        for mode in self.answers.keys():
+        for mode in ['train']:
             total_ans += len(self.answers[mode])
             for a in self.answers[mode]:
                 if a in hist.keys():

@@ -35,14 +35,15 @@ def get_config(image_mode='real'):
     config['saved_params']              = os.path.join( config['opath'], 'params')
     config['load_from_saved_params']    = False
     config['checkpoint_interval']       = 60 #mins
+    config['top_k_answers']             = 1000
     config['fine_tune_vgg']             = False
     config['train_data_percent']        = 100
-    config['epochs']                    = 100
+    config['epochs']                    = 500
     config['mlp_input_dim']             = 1024
     config['lstm_hidden_dim']           = 300
-    config['bptt_trunk_steps']          = -1
+    config['bptt_trunk_steps']          = 7
     config['grad_clip']                 = 100
-    config['batch_size']                = 128
+    config['batch_size']                = 256
     config['num_division']              = 50
     return config
 
@@ -64,7 +65,7 @@ if __name__ == "__main__":
         ifolder = os.path.join( config["dpath"],"real_images")            
         afolder = os.path.join( ifolder,"annotations")                      
         qfolder = os.path.join( ifolder,"questions") 
-        l.get_answer_vocab(afolder)
+        l.get_answer_vocab(config['top_k_answers'], afolder)
         l.get_question_vocab(qfolder)
     elif sys.argv[1] == "gen_vgg_features":
         config = get_config()
