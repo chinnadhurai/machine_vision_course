@@ -45,7 +45,7 @@ def get_config(image_mode='real'):
     config['grad_clip']                 = [-5,5]
     config['batch_size']                = 4096
     config['num_division']              = 50
-    config['experiment_id']             = "lstmQ_I_all_qns"#"lstmQ_dot_I" #lstmQ_add_I
+    config['experiment_id']             = str(sys.argv[2])#'lstmQ_add_I'#'deep_lstmQ_I'#"deep_lstmQ_I"#lstmQ_I_all_qns"#"lstmQ_dot_I" #lstmQ_add_I
     return config
 
 if __name__ == "__main__":
@@ -78,10 +78,18 @@ if __name__ == "__main__":
         config = get_config()
         vqa_classifier = vqa_type(config)
         vqa_classifier.train()
+    elif sys.argv[1] == 'delete_files':
+        config = get_config()
+        vqa_classifier = vqa_type(config)
+        vqa_classifier.exp_saver.clear_all_files()
     elif sys.argv[1] == 'vqa_train_sanity':
         config = get_config()
         vqa_classifier = vqa_type(config)
         vqa_classifier.sanity_check_train()
+    elif sys.argv[1] == 'plot_results':
+        config = get_config()
+        vqa_classifier = vqa_type(config)
+        vqa_classifier.plot_results()
     else:
         print "Arguments needs either be chunk / vocab / gen_vgg_features / vqa_train"
         exit(0)

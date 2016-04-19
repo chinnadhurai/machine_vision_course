@@ -81,7 +81,7 @@ class vqa_type:
         self.load_saved_params(network,param_type)
     
     def dump_current_params(self):
-        print "Saving current params to ", self.config['saved_params']
+        #print "Saving current params to ", self.config['saved_params']
         params = []
         for k,v in self.saved_params.items():
             params = [p.get_value() for p in v['params']]
@@ -110,7 +110,33 @@ class vqa_type:
         net  = {'l_in':l_in, 'l_embd':l_embd}
         print "Done building question LSTM ..."
         return net
-        
+    
+    def build_2layer_question_lstm(self, input_var, mask=None):
+        input_dim, seq_len = len(self.qvocab), self.max_qlen
+        # (batch size, max sequence length, number of features)
+
+        l_in = lasagne.layers.InputLayer(shape=(None, seq_len),#, input_dim),
+                                            input_var=input_var)
+        lstm_params = lasagne.layers.get_all_params(l_in)
+        l_embd = lasagne.layers.EmbeddingLayer(l_in, input_dim, self.config['lstm_hidden_dim'])
+        l_mask = lasagne.layers.InputLayer(shape=(None, seq_len), input_var=mask)
+        l_lstm1 = lasagne.layers.LSTMLayer(l_embd,
+                                          num_units             = self.config['lstm_hidden_dim'],
+                                          #only_return_final     = True,
+                                          gradient_steps        = self.config['bptt_trunk_steps'],
+                                          mask_input            = l_mask
+                                         )
+        l_lstm2 = lasagne.layers.LSTMLayer(l_lstm1,
+                                          num_units             = self.config['lstm_hidden_dim'],
+                                          only_return_final     = True,
+                                          mask_input            = l_mask,
+                                          gradient_steps        = self.config['bptt_trunk_steps']
+                                          )
+        l_dense = lasagne.layers.DenseLayer(l_lstm2, num_units=self.config['mlp_input_dim'])
+        self.add_to_param_list( l_dense, lasagne.layers.get_all_params(l_dense) , param_type='qlstm')
+        net  = {'l_in':l_in, 'l_lstm1':l_lstm1,'l_lstm2':l_lstm2, 'l_dense':l_dense}
+        print "Done building question LSTM ..."
+        return net
 
     def build_question_lstm(self, input_var, mask=None):
         input_dim, seq_len = len(self.qvocab), self.max_qlen
@@ -146,7 +172,7 @@ class vqa_type:
         return net
 
     def combine_image_question_model(self,image_feature, question_feature):
-        return image_feature * question_feature
+        return image_feature*question_feature
     
     def build_mlp_model(self,input_var):
         net = {}
@@ -191,7 +217,7 @@ class vqa_type:
     
     def build_model_util(self,iX):
         qX, mask, Y = self.qX, self.lstm_mask, self.Y
-        q_lstm_net = self.build_question_lstm(qX, mask)
+        q_lstm_net = self.build_2layer_question_lstm(qX, mask)
         ql_out = lasagne.layers.get_output(q_lstm_net['l_dense'])
         vgg_mlp_net = self.build_vgg_feature_mlp(iX)
         vgg_out = lasagne.layers.get_output(vgg_mlp_net['l_out'])
@@ -200,15 +226,11 @@ class vqa_type:
         prediction = lasagne.layers.get_output(network, deterministic=False)
         loss = lasagne.objectives.categorical_crossentropy(prediction, Y)
         loss = loss.mean()
-        params = self.params#lasagne.layers.get_all_params(network)
+        params = self.params
         all_grads = T.grad(loss, params)
         if self.grad_clip != None:
             all_grads = [T.clip(g, self.grad_clip[0], self.grad_clip[1]) for g in all_grads]
-        #print len(params)
-        #print [ p.get_value().shape for p in params ]
         updates = lasagne.updates.adam(all_grads, params, learning_rate=0.01)
-        #updates = lasagne.updates.nesterov_momentum(
-        #    loss, params, learning_rate=0.01, momentum=0.9)
         test_prediction = lasagne.layers.get_output(network, deterministic=True)
         test_prediction = T.argmax(test_prediction, axis=1)
         print "Compiling..."
@@ -433,7 +455,7 @@ class vqa_type:
         output = [ -1.0*np.log(hist[a]) for a in range(len(self.avocab))] 
         return output
 
-    def plot_stuff(self):
+    def plot_results(self):
         l_loss,l_t_acc, l_v_acc = self.exp_saver.load_array(fid='loss_t_v_acc')
         self.plot_loss(l_loss)
         self.plot_train_val(l_t_acc,l_v_acc)

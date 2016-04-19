@@ -205,7 +205,6 @@ class save_np_arrays:
             else:
                 np.save(f2s,f)
                 print "Saving file ",str(itr)
-
         
     def load_latest(self,folder,srch_pattern=None):
         if srch_pattern is not None:
@@ -213,6 +212,12 @@ class save_np_arrays:
         else:
             f2l = sorted([f for f in os.listdir(folder)], reverse=True)[0]
         return np.load(f2l)
+    
+    def clear_all_files(self):
+        print "Clearing all prev files in %s !"%(self.folder)
+        for f in os.listdir(self.folder):
+            os.rmdir(os.path.join(self.folder,f))
+            print "Removing folder ", f
 
 class plotter_tool:
     def __init__(self,folder):
