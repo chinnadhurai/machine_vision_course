@@ -218,7 +218,7 @@ class vqa_type:
     def train(self):
         train, predict = self.build_model()
         num_training_divisions  = int(self.num_division *self.config['train_data_percent']/100)
-        num_val_divisions       = num_training_divisions 
+        num_val_divisions       = num_training_divisions
         self.timer.set_checkpoint('param_save')
         for epoch in range(self.config['epochs']):
             train_accuracy,total = 0,0
@@ -226,46 +226,42 @@ class vqa_type:
             if self.timer.expired('param_save', self.config['checkpoint_interval']):
                 self.dump_current_params()
                 self.timer.set_checkpoint('param_save')
-            for division_id in [1]:#range(num_training_divisions):
-                #print " epoch percent done",*100/num_training_divisions)
+            loss = []
+            for division_id in range(num_training_divisions):
                 qn, mask, iX, ans = self.get_data(division_id, mode='train')
-                train_accuracy += self.train_util(qn, mask, iX, ans, train, predict)
-                total += ans.shape[0]
-            print train_accuracy, total
-            print"Epoch : %d, Training accuracy     : %f, time taken (mins) : %f"%(epoch, train_accuracy*100.00 / total,self.timer.print_checkpoint('train'))
-            val_accuracy,total = 0,0
+                loss.append(self.train_util(qn, mask, iX, ans, train, predict))
+            loss = np.mean(np.array(loss))
+            print"Epoch                : ",epoch
+            print"cross_entropy        : %f, time taken (mins) : %f"%(loss,self.timer.print_checkpoint('train'))
+            val_acc,train_acc = [],[]
             self.timer.set_checkpoint('val')
-            for division_id in [1]:#range(num_val_divisions):
+            for division_id in range(num_val_divisions):
                 qn, mask, iX, ans = self.get_data(division_id, mode='val')
-                val_accuracy += self.val_util(qn, mask, iX, ans, train, predict)                       
-                total += ans.shape[0]
-            print "Epoch : %d, Val accuracy         : %f, time taken (mins) : %f"%(epoch, val_accuracy*100.00 / total, self.timer.print_checkpoint('val') )
+                val_acc.append(self.acc_util(qn, mask, iX, ans, train, predict))
+                qn, mask, iX, ans = self.get_data(division_id, mode='train')
+                train_acc.append(self.acc_util(qn, mask, iX, ans, train, predict))           
+            val_acc = np.mean(np.array(val_acc))*100.0
+            train_acc = np.mean(np.array(train_acc))*100.0
+            print"Training accuracy     : %f, time taken (mins) : %f"%(train_acc ,self.timer.print_checkpoint('val') )   
+            print"Val accuracy          : %f, time taken (mins) : %f\n"%(val_acc   ,self.timer.print_checkpoint('val') )
     
     def train_util(self, qX, mask, iX, Y, train, predict):
         mb_size = self.config['batch_size']
+        loss = []
         for s,e in zip( range(0, len(qX), mb_size), range(mb_size, len(qX), mb_size)):
-            loss = train(qX[s:e], mask[s:e], iX[s:e], Y[s:e])
-        cumsum = 0
+            loss.append(train(qX[s:e], mask[s:e], iX[s:e], Y[s:e]))
+        return np.mean(np.array(loss))
+    
+    def acc_util(self, qX, mask, iX, Y, train, predict):
+        mb_size = self.config['batch_size'] 
+        cumsum,total = 0.0,0.0
         for s,e in zip( range(0, len(qX), mb_size), range(mb_size, len(qX), mb_size)):
             pred = predict(qX[s:e], mask[s:e] ,iX[s:e])
             cumsum += np.sum(pred == Y[s:e])
-            print [(self.aword[a],a) for a in pred[:10]]
-            print [(self.aword[a],a) for a in Y[s:s+10]]
-        return cumsum
-
-    def val_util(self, qX, mask, iX, Y, train, predict):
-        cumsum,total = 0,0
-        yn_ids = [ itr for itr,i in enumerate(Y) if self.aword[i] != 'yes' and self.aword[i] != 'no']
-        mb_size = self.config['batch_size']
-        pred = np.array([-1]*Y.shape[0])
-        for s,e in zip( range(0, qX.shape[0], mb_size), range(mb_size, qX.shape[0], mb_size)):
-            pred[s:e] = predict(qX[s:e], mask[s:e] ,iX[s:e])
-            cumsum += np.sum(pred[s:e] == Y[s:e])
-       # print "yes/no acc", 100.0*np.mean(pred[yn_ids] == Y[yn_ids])
-       # print [self.aword[p] for p in pred[yn_ids[:10]]]
-       # print [self.aword[p] for p in Y[yn_ids[:10]]]
-       # print qX.shape, Y.shape
-        return cumsum
+            total += len(pred)
+            #print [(self.aword[a],a) for a in pred[:2]]
+            #print [(self.aword[a],a) for a in Y[s:s+2]]
+        return cumsum/total
 
     def sanity_check_train(self):
         train, predict = self.build_model()
@@ -274,7 +270,7 @@ class vqa_type:
             self.toy_train_util(i,qn, mask, iX, ans,train, predict)    
     
     def toy_train_util(self,epoch, qX, mask, iX, Y, train, predict):
-        mb = 4000
+        mb = 2000
         loss = train(qX[:mb], mask[:mb], iX[:mb], Y[:mb])
         pred = predict(qX[:mb], mask[:mb], iX[:mb])
         print "Epoch         : ", epoch
@@ -301,10 +297,8 @@ class vqa_type:
         print "image feature: ",iX.shape
         print "ans          : ",ans.shape
         """
-        if sanity_mode:
-            yn_ids = [ itr for itr,i in enumerate(ans) if self.aword[i] != 'yes' and self.aword[i] != 'no']
-            print qn.shape 
-            qn, mask, iX, ans = qn[yn_ids], mask[yn_ids], iX[yn_ids], ans[yn_ids]
+        yn_ids = [ itr for itr,i in enumerate(ans) if self.aword[i] != 'yes' and self.aword[i] != 'no']
+        qn, mask, iX, ans = qn[yn_ids], mask[yn_ids], iX[yn_ids], ans[yn_ids]
         
         return qn, mask, iX, ans
     

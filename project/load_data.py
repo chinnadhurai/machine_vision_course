@@ -372,7 +372,7 @@ def load_questions(folder, mode='val'):
     qfiles = [i for i in qfiles if str(i).find(mode) != -1 and i.endswith('.json')]
     for i in qfiles:
         qfile = os.path.join(folder,i)
-        print "Getting questions from ", qfile
+        #print "Getting questions from ", qfile
         data = json.load(open(qfile, 'r'))
         for q in data['questions']:
             localdict = {}
