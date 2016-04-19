@@ -192,6 +192,21 @@ class save_np_arrays:
              output.append(np.load(f2s))
         return output
     
+    def append_array(self,files,fid):
+        fid = str(fid)
+        file_loc  = os.path.join(self.folder,fid)
+        if not os.path.exists( file_loc ):
+            os.makedirs(file_loc)
+        for itr,f in enumerate(files):
+            f2s = os.path.join(file_loc, self.default_string + str(itr))
+            if os.path.exists(f2s):
+                np.save(np.append(np.load(f2s),f,axis=0))
+                print "Appending file ",str(itr)
+            else:
+                np.save(f2s,f)
+                print "Saving file ",str(itr)
+
+        
     def load_latest(self,folder,srch_pattern=None):
         if srch_pattern is not None:
             f2l = sorted([f for f in os.listdir(folder) if f.find(srch_pattern) != -1], reverse=True)[0]

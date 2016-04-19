@@ -36,14 +36,13 @@ class vqa_type:
         self.qX                         = T.imatrix()#T.ftensor3()
         self.lstm_mask                  = T.imatrix()
         self.iX                         = T.fmatrix()
-        self.Y                          = T.ivector()
         self.params                     = []
         pprint(config)
         print "\n----------------------"
         print "\nPreping data set..."
         self.timer = l.timer_type()
         self.saver = l.save_np_arrays(os.path.join(self.config['questions_folder'], "temp"))
-        self.exp_saver = l.save_np_arrays(os.path.join(self.config['questions_folder'], config['experiment_id']))
+        self.exp_saver = l.save_np_arrays(os.path.join(self.config['real_abstract_images'], config['experiment_id']))
         default_plot_folder = os.path.join(config['real_abstract_images'], "plots")
         self.plotter = l.plotter_tool(os.path.join(default_plot_folder, config['experiment_id']))
         self.tokenizer = WordPunctTokenizer()
@@ -60,7 +59,7 @@ class vqa_type:
         self.qdict, self.image_ids, self.question_ids, self.answer_type = {},{},{},{}
         self.answers, self.questions, self.mask, self.divisions, self.saved_params = {},{},{},{},{}
         self.timer.set_checkpoint('init')
-        load_from_file= False
+        load_from_file= True
         for mode in ['train','val']:
             self.qdict[mode] = load_data.load_questions(self.config['questions_folder'], mode=mode)
             self.image_ids[mode], self.question_ids[mode], self.answer_type[mode], self.answers[mode] = self.get_image_question_ans_ids(mode, load_from_file=load_from_file)
@@ -252,9 +251,10 @@ class vqa_type:
             print"Val accuracy          : %f, time taken (mins) : %f\n"%(val_acc   ,self.timer.print_checkpoint('val') )
             l_v_acc.append(val_acc)
             l_t_acc.append(train_acc)
-        self.plot_loss(l_loss)
-        self.plot_train_val(l_t_acc,l_v_acc)
-        
+        #self.plot_loss(l_loss)
+        #self.plot_train_val(l_t_acc,l_v_acc)
+        self.exp_saver.append_array([l_loss,l_t_acc, l_v_acc],fid='loss_t_v_acc') 
+
     def train_util(self, qX, mask, iX, Y, train, predict):
         mb = self.config['batch_size']
         loss = train(qX[:mb], mask[:mb], iX[:mb], Y[:mb])
@@ -307,8 +307,8 @@ class vqa_type:
         print "image feature: ",iX.shape
         print "ans          : ",ans.shape
         """
-        yn_ids = [ itr for itr,i in enumerate(ans) if self.aword[i] != 'yes' and self.aword[i] != 'no']
-        qn, mask, iX, ans = qn[yn_ids], mask[yn_ids], iX[yn_ids], ans[yn_ids]
+        #yn_ids = [ itr for itr,i in enumerate(ans) if self.aword[i] != 'yes' and self.aword[i] != 'no']
+        #qn, mask, iX, ans = qn[yn_ids], mask[yn_ids], iX[yn_ids], ans[yn_ids]
         
         return qn, mask, iX, ans
     
@@ -432,6 +432,10 @@ class vqa_type:
         output = [ -1.0*np.log(hist[a]) for a in range(len(self.avocab))] 
         return output
 
+    def plot_stuff(self):
+        l_loss,l_t_acc, l_v_acc = self.exp_saver.load_array(fid='loss_t_v_acc')
+        self.plot_loss(l_loss)
+        self.plot_train_val(l_t_acc,l_v_acc)
 
     def plot_loss(self,loss):
         self.plotter.basic_plot(plot_id='loss_curve',
