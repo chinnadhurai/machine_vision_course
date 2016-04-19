@@ -9,6 +9,7 @@ from theano.misc.pkl_utils import load
 from scipy.misc import imread
 from PIL import Image
 import os
+from os import listdir
 import cPickle as pickle
 import gzip
 import h5py
@@ -164,3 +165,29 @@ class timer_type:
     def get_uid(self):
         now = datetime.datetime.now()
         return str(now.strftime("%Y_%m_%d_%H_%M"))
+
+class save_np_arrays:
+    def __init__(self,folder):
+        self.folder = folder
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+        self.default_string = "file_"
+        print "File Saver initiliazed, loc :", folder
+   
+    def save_array(self,files,fid):
+        fid = str(fid)
+        file_loc  = os.path.join(self.folder,fid)
+        if not os.path.exists( file_loc ):
+            os.makedirs(file_loc)
+        for itr,f in enumerate(files):
+            f2s = os.path.join(file_loc, self.default_string + str(itr))
+            np.save(f2s,f)
+            print "Saving file ",str(itr)
+    
+    def load_array(self,fid):
+        output = []
+        file_loc = os.path.join(self.folder,fid)
+        for itr in range(len(listdir(file_loc))):
+             f2s = os.path.join(file_loc, self.default_string + str(itr) + ".npy")
+             output.append(np.load(f2s))
+        return output

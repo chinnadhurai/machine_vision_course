@@ -318,6 +318,7 @@ def get_answer_vocab(k, folder):
                 local_dict['type_yes_no'] = (qa == 'yes' or qa == 'no')
                 local_dict['ans_id'] = top_k_vocab[qa]
                 local_dict['ans'] = qa 
+                local_dict['ans_type'] = q['answer_type']
                 id_info['top_k_ids'].append(local_dict)
                 if local_dict['type_yes_no']:
                     id_info['ans_no_ids'].append(local_dict)      

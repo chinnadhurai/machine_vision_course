@@ -42,6 +42,7 @@ class vqa_type:
         print "\n----------------------"
         print "\nPreping data set..."
         self.timer = l.timer_type()
+        self.saver = l.save_np_arrays( os.path.join(self.config['questions_folder'], "temp"))
         self.tokenizer = WordPunctTokenizer()
         pfile = os.path.join(self.config['questions_folder'], "qn_vocab.zip")
         self.qvocab, self.qword, self.max_qlen = pickle.load( gzip.open( pfile, "rb" ) )
@@ -52,23 +53,24 @@ class vqa_type:
         pfile = os.path.join(self.config['annotations_folder'], "id_info.zip")
         self.id_info = pickle.load( gzip.open( pfile, "rb" ) )
         self.num_division = config['num_division']
+        self.grad_clip = config['grad_clip']
         self.qdict = {}
         self.image_ids = {}
         self.question_ids = {}
-        self.answer_ids = {}
+        self.answer_type = {}
         self.answers = {}
         self.questions = {}
         self.mask= {}
         self.divisions = {}
         self.saved_params = {}
         self.timer.set_checkpoint('init')
-        save_qn_ans = False
+        load_from_file= True
         for mode in ['train','val']:
             self.qdict[mode] = load_data.load_questions(self.config['questions_folder'], mode=mode)
-            self.image_ids[mode], self.question_ids[mode], self.answer_ids[mode] = self.get_image_question_ans_ids(mode, save_ids=save_qn_ans)
+            self.image_ids[mode], self.question_ids[mode], self.answer_type[mode], self.answers[mode] = self.get_image_question_ans_ids(mode, load_from_file=load_from_file)
             mbsize = len(self.image_ids[mode]) // self.num_division
             self.divisions[mode] = zip(range(0, len(self.image_ids[mode]), mbsize), range(mbsize, len(self.image_ids[mode]), mbsize))
-            self.store_question_data(mode, save_qns=save_qn_ans, save_image_features=save_qn_ans)
+            self.store_question_data(mode, load_from_file=load_from_file, save_image_features=False)
         print "init time taken", self.timer.print_checkpoint('init')
         self.p_ans_vector = self.unigram_dist()
         print "Initialization done ..."
@@ -85,15 +87,16 @@ class vqa_type:
     
     def dump_current_params(self):
         print "Saving current params to ", self.config['saved_params']
+        params = []
         for k,v in self.saved_params.items():
             params = [p.get_value() for p in v['params']]
-            np.save(v['f2s'],params)
+            self.saver.save_array(params,fid=str(k) + '_model_params')
 
     def load_saved_params(self, network, param_type):
         if not self.config['load_from_saved_params']:
             return
         print "Loading %s params from %s"%(param_type,self.saved_params[param_type]['f2s'])
-        params = np.load(self.saved_params[param_type]['f2s'])
+        params = self.saver.load_array(fid=str(k) + '_model_params')
         lasagne.layers.set_all_param_values(network, params)
 
     def load_vgg_params(self):
@@ -101,6 +104,10 @@ class vqa_type:
         params = l.load_params_pickle(param_loc)
         return params['param values']
     
+    def build_question_boW(self, input_var, mask=None):
+        return
+        
+
     def build_question_lstm(self, input_var, mask=None):
         input_dim, seq_len = len(self.qvocab), self.max_qlen
         # (batch size, max sequence length, number of features)
@@ -114,7 +121,6 @@ class vqa_type:
                                           num_units             = self.config['lstm_hidden_dim'], 
                                           only_return_final     = True,
                                           gradient_steps        = self.config['bptt_trunk_steps'],
-                                          grad_clipping         = self.config['grad_clip'],
                                           mask_input            = l_mask
                                          )
         l_dense = lasagne.layers.DenseLayer(l_lstm, num_units=self.config['mlp_input_dim'])
@@ -158,9 +164,9 @@ class vqa_type:
         net['l_out'] = lasagne.layers.DenseLayer(
                 net['l_h2_drop'],
                 num_units=len(self.avocab),
-                nonlinearity=lasagne.nonlinearities.softmax,
-                W = lasagne.init.Constant(0.),
-                b = lasagne.init.Categorical(self.p_ans_vector))
+                nonlinearity=lasagne.nonlinearities.softmax)
+                #W = lasagne.init.Constant(0.),
+                #b = lasagne.init.Categorical(self.p_ans_vector))
         self.add_to_param_list( net['l_out'], lasagne.layers.get_all_params(net['l_out']), param_type='final_mlp' )
         print "Done building final MLP ..."
         return net
@@ -191,16 +197,21 @@ class vqa_type:
         loss = lasagne.objectives.categorical_crossentropy(prediction, Y)
         loss = loss.mean()
         params = self.params#lasagne.layers.get_all_params(network)
+        all_grads = T.grad(loss, params)
+        if self.grad_clip != None:
+            all_grads = [T.clip(g, self.grad_clip[0], self.grad_clip[1]) for g in all_grads]
         #print len(params)
         #print [ p.get_value().shape for p in params ]
-        self.inst_params = params
-        updates = lasagne.updates.nesterov_momentum(
-            loss, params, learning_rate=0.01, momentum=0.9)
+        updates = lasagne.updates.adam(all_grads, params, learning_rate=0.01)
+        #updates = lasagne.updates.nesterov_momentum(
+        #    loss, params, learning_rate=0.01, momentum=0.9)
         test_prediction = lasagne.layers.get_output(network, deterministic=True)
         test_prediction = T.argmax(test_prediction, axis=1)
         print "Compiling..."
+        self.timer.set_checkpoint('compile')
         train = theano.function([qX, mask, iX, Y], loss, updates=updates, allow_input_downcast=True)
         predict = theano.function([qX, mask, iX], test_prediction, allow_input_downcast=True)
+        print "Compile time(mins)", self.timer.print_checkpoint('compile')
         print "Done Compiling final model..."
         return train,predict
     
@@ -238,26 +249,47 @@ class vqa_type:
         for s,e in zip( range(0, len(qX), mb_size), range(mb_size, len(qX), mb_size)):
             pred = predict(qX[s:e], mask[s:e] ,iX[s:e])
             cumsum += np.sum(pred == Y[s:e])
-            print [self.aword[p] for p in pred[np.random.randint(100, size=10)]]
+            print [(self.aword[a],a) for a in pred[:10]]
+            print [(self.aword[a],a) for a in Y[s:s+10]]
         return cumsum
-        l.print_overwrite("Training accuracy(in  % ):", cumsum*100 / Y.shape[0])     
 
     def val_util(self, qX, mask, iX, Y, train, predict):
         cumsum,total = 0,0
+        yn_ids = [ itr for itr,i in enumerate(Y) if self.aword[i] != 'yes' and self.aword[i] != 'no']
         mb_size = self.config['batch_size']
-        for s,e in zip( range(0, len(qX), mb_size), range(mb_size, len(qX), mb_size)):
-            pred = predict(qX[s:e], mask[s:e] ,iX[s:e])
-            cumsum += np.sum(pred == Y[s:e])
+        pred = np.array([-1]*Y.shape[0])
+        for s,e in zip( range(0, qX.shape[0], mb_size), range(mb_size, qX.shape[0], mb_size)):
+            pred[s:e] = predict(qX[s:e], mask[s:e] ,iX[s:e])
+            cumsum += np.sum(pred[s:e] == Y[s:e])
+       # print "yes/no acc", 100.0*np.mean(pred[yn_ids] == Y[yn_ids])
+       # print [self.aword[p] for p in pred[yn_ids[:10]]]
+       # print [self.aword[p] for p in Y[yn_ids[:10]]]
+       # print qX.shape, Y.shape
         return cumsum
 
+    def sanity_check_train(self):
+        train, predict = self.build_model()
+        qn, mask, iX, ans = self.get_data(2, mode='train', sanity_mode=True)
+        for i in range(1000):
+            self.toy_train_util(i,qn, mask, iX, ans,train, predict)    
+    
+    def toy_train_util(self,epoch, qX, mask, iX, Y, train, predict):
+        mb = 4000
+        loss = train(qX[:mb], mask[:mb], iX[:mb], Y[:mb])
+        pred = predict(qX[:mb], mask[:mb], iX[:mb])
+        print "Epoch         : ", epoch
+        print "cross_entropy : ", loss
+        print "train acc     : ", 100.0*np.mean(pred==Y[:mb])
+        print "predict      ", [(self.aword[a],a) for a in pred[:10]]
+        print "ground truth ", [(self.aword[a],a) for a in Y[:10]]
+            
     #************************************************************
 
     #            TRAINING / VAL DATA RETRIVAL APIS     
 
     #************************************************************
 
-    def get_data(self, division_num ,mode):
-        image_ids, question_ids, answer_ids = self.image_ids[mode], self.question_ids[mode], self.answer_ids[mode]
+    def get_data(self, division_num ,mode, sanity_mode='False'):
         qn, mask    = self.get_question_data(division_num, mode)    
         ans         = self.get_answer_data(division_num, mode)
         iX          = self.get_image_features(division_num, mode)
@@ -269,6 +301,11 @@ class vqa_type:
         print "image feature: ",iX.shape
         print "ans          : ",ans.shape
         """
+        if sanity_mode:
+            yn_ids = [ itr for itr,i in enumerate(ans) if self.aword[i] != 'yes' and self.aword[i] != 'no']
+            print qn.shape 
+            qn, mask, iX, ans = qn[yn_ids], mask[yn_ids], iX[yn_ids], ans[yn_ids]
+        
         return qn, mask, iX, ans
     
     def get_one_hot(self, qn, one_hot_size):
@@ -290,9 +327,9 @@ class vqa_type:
         f2l = os.path.join(self.config["vqa_model_folder"], f2l)
         return np.load(f2l)
 
-    def store_question_data(self, mode, save_qns, save_image_features=False):
-        if not save_qns:
-            self.questions[mode], self.mask[mode] = self.save_or_load_qn_mask('load',mode)
+    def store_question_data(self, mode, load_from_file, save_image_features=False):
+        if load_from_file:
+            self.questions[mode], self.mask[mode] = self.saver.load_array(fid=str(mode)+'qn_mask')
             return
         qdict = self.qdict[mode]
         question_ids = self.question_ids[mode]
@@ -313,50 +350,26 @@ class vqa_type:
         self.mask[mode]         = np.asarray(mask_output)
         print "questions shape      :", self.questions[mode].shape
         print "mask shape           :", self.mask[mode].shape
-        self.save_or_load_qn_mask('save', mode, self.questions[mode], self.mask[mode])
+        self.saver.save_array([ self.questions[mode], self.mask[mode] ], fid=str(mode)+'qn_mask')
         if save_image_features:
             self.save_image_data(self.image_ids[mode], self.num_division ,mode)
 
-    def save_or_load_qn_mask(self,mode,train_mode,qn=None,mask=None):
-        f2s_q = os.path.join(self.config['questions_folder'], str(train_mode) + "_questions")
-        f2l_m = os.path.join(self.config['questions_folder'], str(train_mode) + "_mask")
-        if mode=='save':
-            print "Saving files to ", f2s_q
-            np.save(f2s_q, qn)
-            np.save(f2l_m, mask)
-        else:
-            f2s_q += ".npy"
-            f2l_m += ".npy"
-            return np.load(f2s_q), np.load(f2l_m)
-    
-    def get_image_question_ans_ids(self,mode,save_ids):
-        #if not save_ids:
-        #    return self.save_or_load_ids('load',mode)
-        self.answers[mode] = []
-        image_ids = []
-        question_ids = []
-        answer_ids = []
+    def get_image_question_ans_ids(self,mode,load_from_file):
+        if load_from_file:
+            return self.saver.load_array(fid=str(mode)+"ids")
+        image_ids, question_ids = [],[]
+        answer_types, answers   = [],[]
         for a_id,a in enumerate(self.id_info[mode]['top_k_ids']):
-            self.answers[mode].append(a['ans_id'])
-            answer_ids.append(a['ans_id'])
+            answers.append(a['ans_id'])
+            answer_types.append(a['ans_type'])
             image_ids.append(a['im_id'])
             question_ids.append(a['qn_id'])
-        self.answers[mode] = np.asarray(self.answers[mode])
+        
         assert len(image_ids) == len(question_ids)
-        assert len(image_ids) == len(answer_ids)
-        self.save_or_load_ids('save',mode,image_ids, question_ids, answer_ids)
-        return image_ids, question_ids, answer_ids
-    
-    def save_or_load_ids(self, mode, train_mode, im_id=None, q_id=None, a_id=None):
-        f2s_i = os.path.join(self.config['questions_folder'], str(train_mode) + "_images_ids")
-        f2s_q = os.path.join(self.config['questions_folder'], str(train_mode) + "_qns_ids")
-        f2s_a = os.path.join(self.config['questions_folder'], str(train_mode) + "_ans_ids")
-        if mode=='save':
-            np.save(f2s_i,im_id)
-            np.save(f2s_q,q_id)
-            np.save(f2s_a,a_id)
-        else:
-            return np.load(f2s_i+".npy"), np.load(f2s_q+".npy"), np.load(f2s_a+".npy")
+        assert len(image_ids) == len(answers)
+
+        self.saver.save_array([image_ids, question_ids, answer_types, answers], fid=str(mode)+"ids")
+        return np.array(image_ids), np.array(question_ids), np.array(answer_types), np.array(answers)
     
     def get_image_file_id(self,image_id,image_db=None):
         for file_id, ilist in enumerate(image_db):
@@ -412,5 +425,5 @@ class vqa_type:
                 else:
                     hist[a] = 1
         hist = dict([ (k,float(v)/total_ans) for k,v in hist.items() ])
-        output = [ np.log(hist[a]) for a in range(len(self.avocab))] 
+        output = [ -1.0*np.log(hist[a]) for a in range(len(self.avocab))] 
         return output

@@ -41,8 +41,8 @@ def get_config(image_mode='real'):
     config['epochs']                    = 500
     config['mlp_input_dim']             = 1024
     config['lstm_hidden_dim']           = 300
-    config['bptt_trunk_steps']          = 7
-    config['grad_clip']                 = 100
+    config['bptt_trunk_steps']          = -1
+    config['grad_clip']                 = [-5,5]
     config['batch_size']                = 256
     config['num_division']              = 50
     return config
@@ -77,6 +77,10 @@ if __name__ == "__main__":
         config = get_config()
         vqa_classifier = vqa_type(config)
         vqa_classifier.train()
+    elif sys.argv[1] == 'vqa_train_sanity':
+        config = get_config()
+        vqa_classifier = vqa_type(config)
+        vqa_classifier.sanity_check_train()
     else:
         print "Arguments needs either be chunk / vocab / gen_vgg_features / vqa_train"
         exit(0)
