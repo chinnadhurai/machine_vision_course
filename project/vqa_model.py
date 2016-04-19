@@ -43,6 +43,9 @@ class vqa_type:
         print "\nPreping data set..."
         self.timer = l.timer_type()
         self.saver = l.save_np_arrays(os.path.join(self.config['questions_folder'], "temp"))
+        self.exp_saver = l.save_np_arrays(os.path.join(self.config['questions_folder'], config['experiment_id']))
+        default_plot_folder = os.path.join(config['real_abstract_images'], "plots")
+        self.plotter = l.plotter_tool(os.path.join(default_plot_folder, config['experiment_id']))
         self.tokenizer = WordPunctTokenizer()
         pfile = os.path.join(self.config['questions_folder'], "qn_vocab.zip")
         self.qvocab, self.qword, self.max_qlen = pickle.load( gzip.open( pfile, "rb" ) )
@@ -54,17 +57,10 @@ class vqa_type:
         self.id_info = pickle.load( gzip.open( pfile, "rb" ) )
         self.num_division = config['num_division']
         self.grad_clip = config['grad_clip']
-        self.qdict = {}
-        self.image_ids = {}
-        self.question_ids = {}
-        self.answer_type = {}
-        self.answers = {}
-        self.questions = {}
-        self.mask= {}
-        self.divisions = {}
-        self.saved_params = {}
+        self.qdict, self.image_ids, self.question_ids, self.answer_type = {},{},{},{}
+        self.answers, self.questions, self.mask, self.divisions, self.saved_params = {},{},{},{},{}
         self.timer.set_checkpoint('init')
-        load_from_file= True
+        load_from_file= False
         for mode in ['train','val']:
             self.qdict[mode] = load_data.load_questions(self.config['questions_folder'], mode=mode)
             self.image_ids[mode], self.question_ids[mode], self.answer_type[mode], self.answers[mode] = self.get_image_question_ans_ids(mode, load_from_file=load_from_file)
@@ -89,13 +85,13 @@ class vqa_type:
         params = []
         for k,v in self.saved_params.items():
             params = [p.get_value() for p in v['params']]
-            self.saver.save_array(params,fid=str(k) + '_model_params')
+            self.exp_saver.save_array(params,fid=str(k) + '_model_params')
 
     def load_saved_params(self, network, param_type):
         if not self.config['load_from_saved_params']:
             return
-        print "Loading %s params from %s"%(param_type,self.saved_params[param_type]['f2s'])
-        params = self.saver.load_array(fid=str(param_type) + '_model_params')
+        print "Loading saved params for model :", param_type
+        params = self.exp_saver.load_array(fid=str(param_type) + '_model_params')
         lasagne.layers.set_all_param_values(network, params)
 
     def load_vgg_params(self):
@@ -109,7 +105,11 @@ class vqa_type:
         l_in = lasagne.layers.InputLayer(shape=(None, seq_len),
                                          input_var=input_var)
 
-        return
+        l_embd = lasagne.layers.EmbeddingLayer(l_in, input_dim, self.config['lstm_hidden_dim'])
+        self.add_to_param_list( l_dense, lasagne.layers.get_all_params(l_embd) , param_type='qboW')
+        net  = {'l_in':l_in, 'l_embd':l_embd}
+        print "Done building question LSTM ..."
+        return net
         
 
     def build_question_lstm(self, input_var, mask=None):
@@ -224,6 +224,7 @@ class vqa_type:
         num_training_divisions  = int(self.num_division *self.config['train_data_percent']/100)
         num_val_divisions       = num_training_divisions
         self.timer.set_checkpoint('param_save')
+        l_loss,l_t_acc,l_v_acc = [],[],[]
         for epoch in range(self.config['epochs']):
             train_accuracy,total = 0,0
             self.timer.set_checkpoint('train') 
@@ -235,6 +236,7 @@ class vqa_type:
                 qn, mask, iX, ans = self.get_data(division_id, mode='train')
                 loss.append(self.train_util(qn, mask, iX, ans, train, predict))
             loss = np.mean(np.array(loss))
+            l_loss.append(loss)
             print"Epoch                 : ",epoch
             print"cross_entropy         : %f, time taken (mins) : %f"%(loss,self.timer.print_checkpoint('train'))
             val_acc,train_acc = [],[]
@@ -248,7 +250,11 @@ class vqa_type:
             train_acc = np.mean(np.array(train_acc))*100.0
             print"Training accuracy     : %f, time taken (mins) : %f"%(train_acc ,self.timer.print_checkpoint('val') )   
             print"Val accuracy          : %f, time taken (mins) : %f\n"%(val_acc   ,self.timer.print_checkpoint('val') )
-    
+            l_v_acc.append(val_acc)
+            l_t_acc.append(train_acc)
+        self.plot_loss(l_loss)
+        self.plot_train_val(l_t_acc,l_v_acc)
+        
     def train_util(self, qX, mask, iX, Y, train, predict):
         mb = self.config['batch_size']
         loss = train(qX[:mb], mask[:mb], iX[:mb], Y[:mb])
@@ -265,11 +271,16 @@ class vqa_type:
     def sanity_check_train(self):
         train, predict = self.build_model()
         qn, mask, iX, ans = self.get_data(2, mode='train', sanity_mode=True)
-        for i in range(1000):
-            self.toy_train_util(i,qn, mask, iX, ans,train, predict)    
-    
+        l_loss,l_acc = [],[]
+        for i in range(20):
+            loss, acc = self.toy_train_util(i,qn, mask, iX, ans,train, predict)    
+            l_loss.append(loss)
+            l_acc.append(acc)
+        self.plot_train_val(l_acc, [i-1.0 for i in l_acc])
+        self.plot_loss(l_loss)
+        
     def toy_train_util(self,epoch, qX, mask, iX, Y, train, predict):
-        mb = 4000
+        mb = 400
         loss = train(qX[:mb], mask[:mb], iX[:mb], Y[:mb])
         pred = predict(qX[:mb], mask[:mb], iX[:mb])
         print "Epoch         : ", epoch
@@ -277,7 +288,7 @@ class vqa_type:
         print "train acc     : ", 100.0*np.mean(pred==Y[:mb])
         print "predict      ", [(self.aword[a],a) for a in pred[:10]]
         print "ground truth ", [(self.aword[a],a) for a in Y[:10]]
-            
+        return loss, 100.0*np.mean(pred==Y[:mb])   
     #************************************************************
 
     #            TRAINING / VAL DATA RETRIVAL APIS     
@@ -420,3 +431,20 @@ class vqa_type:
         hist = dict([ (k,float(v)/total_ans) for k,v in hist.items() ])
         output = [ -1.0*np.log(hist[a]) for a in range(len(self.avocab))] 
         return output
+
+
+    def plot_loss(self,loss):
+        self.plotter.basic_plot(plot_id='loss_curve',
+                                l_Y=[loss],
+                                l_Ylabels=['loss'],
+                                Ylabel='NLL(in %)',
+                                Xlabel='Epochs',
+                                title=self.config['experiment_id'] + ': Negative log liklihood curve')
+   
+    def plot_train_val(self,t_acc,v_acc):
+        self.plotter.basic_plot(plot_id='train_val_acc',
+                                l_Y=[t_acc,v_acc],
+                                l_Ylabels=['train','valid'],
+                                Ylabel='Accuracy(in %)',
+                                Xlabel='Epochs',
+                                title=self.config['experiment_id'] + ': Train / Val Accuracy curve')

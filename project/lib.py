@@ -198,3 +198,29 @@ class save_np_arrays:
         else:
             f2l = sorted([f for f in os.listdir(folder)], reverse=True)[0]
         return np.load(f2l)
+
+class plotter_tool:
+    def __init__(self,folder):
+        self.folder = folder
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+        self.default_string = "fig_"
+        print "Plotter initiliazed, loc :", folder
+    
+    def basic_plot(self,plot_id,l_Y,l_Ylabels,Ylabel,Xlabel,title):
+        import matplotlib
+        matplotlib.use('Agg') # Must be before importing matplotlib.pyplot or pylab!
+        import matplotlib.pyplot as plt
+        assert len(l_Y) == len(l_Ylabels)
+        plt_file = os.path.join(self.folder,self.default_string + str(plot_id) + ".jpg")
+        for y,l in zip(l_Y,l_Ylabels):
+            plt.plot(y,label=l)
+        plt.xlabel(Xlabel)
+        plt.ylabel(Ylabel)
+        plt.suptitle(title)
+        legend = plt.legend(loc='upper center', shadow=True)
+        plt.savefig(plt_file)
+        print "Saving plot to", plt_file
+        plt.close()
+        
+
