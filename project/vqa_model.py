@@ -36,6 +36,7 @@ class vqa_type:
         self.qX                         = T.imatrix()#T.ftensor3()
         self.lstm_mask                  = T.imatrix()
         self.iX                         = T.fmatrix()
+        self.Y                          = T.ivector()
         self.params                     = []
         pprint(config)
         print "\n----------------------"
