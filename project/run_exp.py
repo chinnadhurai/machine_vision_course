@@ -34,7 +34,7 @@ def get_config(image_mode='real'):
     config['cleaned_images_folder']     = os.path.join( config["real_abstract_images"], 'cleaned_images')
     config['saved_params']              = os.path.join( config['opath'], 'params')
     config['load_from_saved_params']    = False
-    config['checkpoint_interval']       = 60 #mins
+    config['checkpoint_interval']       = 2 #mins
     config['top_k_answers']             = 1000
     config['fine_tune_vgg']             = False
     config['train_data_percent']        = 100
@@ -43,8 +43,9 @@ def get_config(image_mode='real'):
     config['lstm_hidden_dim']           = 300
     config['bptt_trunk_steps']          = -1
     config['grad_clip']                 = [-5,5]
-    config['batch_size']                = 256
+    config['batch_size']                = 4096
     config['num_division']              = 50
+    config['experiment_id']             = "lstmQ_I"
     return config
 
 if __name__ == "__main__":

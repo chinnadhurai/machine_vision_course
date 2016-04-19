@@ -191,3 +191,10 @@ class save_np_arrays:
              f2s = os.path.join(file_loc, self.default_string + str(itr) + ".npy")
              output.append(np.load(f2s))
         return output
+    
+    def load_latest(self,folder,srch_pattern=None):
+        if srch_pattern is not None:
+            f2l = sorted([f for f in os.listdir(folder) if f.find(srch_pattern) != -1], reverse=True)[0]
+        else:
+            f2l = sorted([f for f in os.listdir(folder)], reverse=True)[0]
+        return np.load(f2l)

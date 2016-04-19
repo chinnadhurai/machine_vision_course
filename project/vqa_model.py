@@ -42,7 +42,7 @@ class vqa_type:
         print "\n----------------------"
         print "\nPreping data set..."
         self.timer = l.timer_type()
-        self.saver = l.save_np_arrays( os.path.join(self.config['questions_folder'], "temp"))
+        self.saver = l.save_np_arrays(os.path.join(self.config['questions_folder'], "temp"))
         self.tokenizer = WordPunctTokenizer()
         pfile = os.path.join(self.config['questions_folder'], "qn_vocab.zip")
         self.qvocab, self.qword, self.max_qlen = pickle.load( gzip.open( pfile, "rb" ) )
@@ -71,7 +71,7 @@ class vqa_type:
             mbsize = len(self.image_ids[mode]) // self.num_division
             self.divisions[mode] = zip(range(0, len(self.image_ids[mode]), mbsize), range(mbsize, len(self.image_ids[mode]), mbsize))
             self.store_question_data(mode, load_from_file=load_from_file, save_image_features=False)
-        print "init time taken", self.timer.print_checkpoint('init')
+        print "Init time taken(in mins)", self.timer.print_checkpoint('init')
         self.p_ans_vector = self.unigram_dist()
         print "Initialization done ..."
         
@@ -81,7 +81,6 @@ class vqa_type:
         local_dict = {}
         local_dict['params'] = l_params
         uid = self.timer.get_uid()
-        local_dict['f2s'] = os.path.join(self.config['saved_params'], str(param_type) + "_params")
         self.saved_params[param_type] = local_dict
         self.load_saved_params(network,param_type)
     
@@ -96,7 +95,7 @@ class vqa_type:
         if not self.config['load_from_saved_params']:
             return
         print "Loading %s params from %s"%(param_type,self.saved_params[param_type]['f2s'])
-        params = self.saver.load_array(fid=str(k) + '_model_params')
+        params = self.saver.load_array(fid=str(param_type) + '_model_params')
         lasagne.layers.set_all_param_values(network, params)
 
     def load_vgg_params(self):
@@ -105,6 +104,11 @@ class vqa_type:
         return params['param values']
     
     def build_question_boW(self, input_var, mask=None):
+        input_dim, seq_len = len(self.qvocab), self.max_qlen
+
+        l_in = lasagne.layers.InputLayer(shape=(None, seq_len),
+                                         input_var=input_var)
+
         return
         
 
@@ -231,8 +235,8 @@ class vqa_type:
                 qn, mask, iX, ans = self.get_data(division_id, mode='train')
                 loss.append(self.train_util(qn, mask, iX, ans, train, predict))
             loss = np.mean(np.array(loss))
-            print"Epoch                : ",epoch
-            print"cross_entropy        : %f, time taken (mins) : %f"%(loss,self.timer.print_checkpoint('train'))
+            print"Epoch                 : ",epoch
+            print"cross_entropy         : %f, time taken (mins) : %f"%(loss,self.timer.print_checkpoint('train'))
             val_acc,train_acc = [],[]
             self.timer.set_checkpoint('val')
             for division_id in range(num_val_divisions):
@@ -246,22 +250,17 @@ class vqa_type:
             print"Val accuracy          : %f, time taken (mins) : %f\n"%(val_acc   ,self.timer.print_checkpoint('val') )
     
     def train_util(self, qX, mask, iX, Y, train, predict):
-        mb_size = self.config['batch_size']
-        loss = []
-        for s,e in zip( range(0, len(qX), mb_size), range(mb_size, len(qX), mb_size)):
-            loss.append(train(qX[s:e], mask[s:e], iX[s:e], Y[s:e]))
-        return np.mean(np.array(loss))
+        mb = self.config['batch_size']
+        loss = train(qX[:mb], mask[:mb], iX[:mb], Y[:mb])
+        return loss
     
     def acc_util(self, qX, mask, iX, Y, train, predict):
-        mb_size = self.config['batch_size'] 
-        cumsum,total = 0.0,0.0
-        for s,e in zip( range(0, len(qX), mb_size), range(mb_size, len(qX), mb_size)):
-            pred = predict(qX[s:e], mask[s:e] ,iX[s:e])
-            cumsum += np.sum(pred == Y[s:e])
-            total += len(pred)
-            #print [(self.aword[a],a) for a in pred[:2]]
-            #print [(self.aword[a],a) for a in Y[s:s+2]]
-        return cumsum/total
+        mb = self.config['batch_size'] 
+        pred = predict(qX[:mb], mask[:mb] ,iX[:mb])
+        acc = np.mean(pred == Y[:mb])
+        #print [(self.aword[a],a) for a in pred[:2]]
+        #print [(self.aword[a],a) for a in Y[s:s+2]]
+        return acc
 
     def sanity_check_train(self):
         train, predict = self.build_model()
@@ -270,7 +269,7 @@ class vqa_type:
             self.toy_train_util(i,qn, mask, iX, ans,train, predict)    
     
     def toy_train_util(self,epoch, qX, mask, iX, Y, train, predict):
-        mb = 2000
+        mb = 4000
         loss = train(qX[:mb], mask[:mb], iX[:mb], Y[:mb])
         pred = predict(qX[:mb], mask[:mb], iX[:mb])
         print "Epoch         : ", epoch
