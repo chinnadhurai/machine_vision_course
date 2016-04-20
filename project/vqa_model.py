@@ -133,12 +133,46 @@ class vqa_type:
                                           gradient_steps        = self.config['bptt_trunk_steps']
                                           )
         l_dense = lasagne.layers.DenseLayer(l_lstm2, num_units=self.config['mlp_input_dim'])
-        self.add_to_param_list( l_dense, lasagne.layers.get_all_params(l_dense) , param_type='qlstm')
+        self.add_to_param_list( l_dense, lasagne.layers.get_all_params(l_dense) , param_type='2layer_qlstm')
         net  = {'l_in':l_in, 'l_lstm1':l_lstm1,'l_lstm2':l_lstm2, 'l_dense':l_dense}
         print "Done building question LSTM ..."
         return net
 
-    def build_question_lstm(self, input_var, mask=None):
+    def build_3layer_question_lstm(self, input_var, mask=None):
+        input_dim, seq_len = len(self.qvocab), self.max_qlen
+        # (batch size, max sequence length, number of features)
+
+        l_in = lasagne.layers.InputLayer(shape=(None, seq_len),#, input_dim),
+                                            input_var=input_var)
+        lstm_params = lasagne.layers.get_all_params(l_in)
+        l_embd = lasagne.layers.EmbeddingLayer(l_in, input_dim, self.config['lstm_hidden_dim'])
+        l_mask = lasagne.layers.InputLayer(shape=(None, seq_len), input_var=mask)
+        l_lstm1 = lasagne.layers.LSTMLayer(l_embd,
+                                          num_units             = self.config['lstm_hidden_dim'],
+                                          only_return_final     = False,
+                                          gradient_steps        = self.config['bptt_trunk_steps'],
+                                          mask_input            = l_mask
+                                         )
+        l_lstm2 = lasagne.layers.LSTMLayer(l_lstm1,
+                                          num_units             = self.config['lstm_hidden_dim'],
+                                          only_return_final     = False,
+                                          mask_input            = l_mask,
+                                          gradient_steps        = self.config['bptt_trunk_steps']
+                                          )
+        l_lstm3 = lasagne.layers.LSTMLayer(l_lstm2,
+                                          num_units             = self.config['lstm_hidden_dim'],
+                                          only_return_final     = True,
+                                          mask_input            = l_mask,
+                                          gradient_steps        = self.config['bptt_trunk_steps']
+                                          )
+        l_dense = lasagne.layers.DenseLayer(l_lstm3, num_units=self.config['mlp_input_dim'])
+        self.add_to_param_list( l_dense, lasagne.layers.get_all_params(l_dense) , param_type='3layer_qlstm')
+        net  = {'l_in':l_in, 'l_lstm1':l_lstm1,'l_lstm2':l_lstm2, 'l_lstm3':l_lstm3,'l_dense':l_dense}
+        print "Done building question LSTM ..."
+        return net
+
+
+    def build_1layer_question_lstm(self, input_var, mask=None):
         input_dim, seq_len = len(self.qvocab), self.max_qlen
         # (batch size, max sequence length, number of features)
      
@@ -172,7 +206,7 @@ class vqa_type:
         return net
 
     def combine_image_question_model(self,image_feature, question_feature):
-        return image_feature*question_feature
+        return image_feature*question_feature#T.concatenate([image_feature, question_feature],axis=1 )
     
     def build_mlp_model(self,input_var):
         net = {}
@@ -217,7 +251,7 @@ class vqa_type:
     
     def build_model_util(self,iX):
         qX, mask, Y = self.qX, self.lstm_mask, self.Y
-        q_lstm_net = self.build_2layer_question_lstm(qX, mask)
+        q_lstm_net = self.build_1layer_question_lstm(qX, mask)
         ql_out = lasagne.layers.get_output(q_lstm_net['l_dense'])
         vgg_mlp_net = self.build_vgg_feature_mlp(iX)
         vgg_out = lasagne.layers.get_output(vgg_mlp_net['l_out'])
@@ -299,8 +333,6 @@ class vqa_type:
             loss, acc = self.toy_train_util(i,qn, mask, iX, ans,train, predict)    
             l_loss.append(loss)
             l_acc.append(acc)
-        self.plot_train_val(l_acc, [i-1.0 for i in l_acc])
-        self.plot_loss(l_loss)
         
     def toy_train_util(self,epoch, qX, mask, iX, Y, train, predict):
         mb = 400
@@ -330,9 +362,17 @@ class vqa_type:
         print "image feature: ",iX.shape
         print "ans          : ",ans.shape
         """
-        #yn_ids = [ itr for itr,i in enumerate(ans) if self.aword[i] != 'yes' and self.aword[i] != 'no']
-        #qn, mask, iX, ans = qn[yn_ids], mask[yn_ids], iX[yn_ids], ans[yn_ids]
-        
+        if 'yes' in self.config['experiment_id'].lower():
+            yn_ids = [ itr for itr,i in enumerate(ans) if self.aword[i] != 'yes' and self.aword[i] != 'no']
+            qn, mask, iX, ans = qn[yn_ids], mask[yn_ids], iX[yn_ids], ans[yn_ids]
+        if 'norm' in self.config['experiment_id'].lower():
+            print "normlized input"
+            norms = 1.0/np.linalg.norm(iX,axis=1)
+            print norms.shape, norms[:10]
+            print iX.shape, iX[0,:10]
+            iX = np.dot(np.diag(norms), iX)
+            print iX.shape, iX[0,:10]
+            
         return qn, mask, iX, ans
     
     def get_one_hot(self, qn, one_hot_size):

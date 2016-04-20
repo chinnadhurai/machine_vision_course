@@ -297,6 +297,8 @@ def get_answer_vocab(k, folder):
             top_k_vocab[w] = wc
             top_k_word[wc] = w
             wc+=1
+    print [(k,v) for k,v in sorted(hist.items(),reverse=True,key=lambda (k,v): (v,k))[:1000]][-1]
+    exit(0)
     print len(top_k_vocab)
     print top_k_vocab['yes'], top_k_vocab['no']
     print hist['yes'], hist['no']
