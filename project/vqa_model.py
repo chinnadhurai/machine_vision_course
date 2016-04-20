@@ -37,6 +37,7 @@ class vqa_type:
         self.lstm_mask                  = T.imatrix()
         self.iX                         = T.fmatrix()
         self.Y                          = T.ivector()
+        self.sparse_indices             = T.imatrix()
         self.params                     = []
         pprint(config)
         print "\n----------------------"
@@ -111,66 +112,6 @@ class vqa_type:
         print "Done building question LSTM ..."
         return net
     
-    def build_2layer_question_lstm(self, input_var, mask=None):
-        input_dim, seq_len = len(self.qvocab), self.max_qlen
-        # (batch size, max sequence length, number of features)
-
-        l_in = lasagne.layers.InputLayer(shape=(None, seq_len),#, input_dim),
-                                            input_var=input_var)
-        lstm_params = lasagne.layers.get_all_params(l_in)
-        l_embd = lasagne.layers.EmbeddingLayer(l_in, input_dim, self.config['lstm_hidden_dim'])
-        l_mask = lasagne.layers.InputLayer(shape=(None, seq_len), input_var=mask)
-        l_lstm1 = lasagne.layers.LSTMLayer(l_embd,
-                                          num_units             = self.config['lstm_hidden_dim'],
-                                          #only_return_final     = True,
-                                          gradient_steps        = self.config['bptt_trunk_steps'],
-                                          mask_input            = l_mask
-                                         )
-        l_lstm2 = lasagne.layers.LSTMLayer(l_lstm1,
-                                          num_units             = self.config['lstm_hidden_dim'],
-                                          only_return_final     = True,
-                                          mask_input            = l_mask,
-                                          gradient_steps        = self.config['bptt_trunk_steps']
-                                          )
-        l_dense = lasagne.layers.DenseLayer(l_lstm2, num_units=self.config['mlp_input_dim'])
-        self.add_to_param_list( l_dense, lasagne.layers.get_all_params(l_dense) , param_type='2layer_qlstm')
-        net  = {'l_in':l_in, 'l_lstm1':l_lstm1,'l_lstm2':l_lstm2, 'l_dense':l_dense}
-        print "Done building question LSTM ..."
-        return net
-
-    def build_3layer_question_lstm(self, input_var, mask=None):
-        input_dim, seq_len = len(self.qvocab), self.max_qlen
-        # (batch size, max sequence length, number of features)
-
-        l_in = lasagne.layers.InputLayer(shape=(None, seq_len),#, input_dim),
-                                            input_var=input_var)
-        lstm_params = lasagne.layers.get_all_params(l_in)
-        l_embd = lasagne.layers.EmbeddingLayer(l_in, input_dim, self.config['lstm_hidden_dim'])
-        l_mask = lasagne.layers.InputLayer(shape=(None, seq_len), input_var=mask)
-        l_lstm1 = lasagne.layers.LSTMLayer(l_embd,
-                                          num_units             = self.config['lstm_hidden_dim'],
-                                          only_return_final     = False,
-                                          gradient_steps        = self.config['bptt_trunk_steps'],
-                                          mask_input            = l_mask
-                                         )
-        l_lstm2 = lasagne.layers.LSTMLayer(l_lstm1,
-                                          num_units             = self.config['lstm_hidden_dim'],
-                                          only_return_final     = False,
-                                          mask_input            = l_mask,
-                                          gradient_steps        = self.config['bptt_trunk_steps']
-                                          )
-        l_lstm3 = lasagne.layers.LSTMLayer(l_lstm2,
-                                          num_units             = self.config['lstm_hidden_dim'],
-                                          only_return_final     = True,
-                                          mask_input            = l_mask,
-                                          gradient_steps        = self.config['bptt_trunk_steps']
-                                          )
-        l_dense = lasagne.layers.DenseLayer(l_lstm3, num_units=self.config['mlp_input_dim'])
-        self.add_to_param_list( l_dense, lasagne.layers.get_all_params(l_dense) , param_type='3layer_qlstm')
-        net  = {'l_in':l_in, 'l_lstm1':l_lstm1,'l_lstm2':l_lstm2, 'l_lstm3':l_lstm3,'l_dense':l_dense}
-        print "Done building question LSTM ..."
-        return net
-
 
     def build_1layer_question_lstm(self, input_var, mask=None):
         input_dim, seq_len = len(self.qvocab), self.max_qlen
@@ -193,6 +134,35 @@ class vqa_type:
         print "Done building question LSTM ..."
         return net
     
+    
+    def build_qn_classifier_mlp(self,input_var):
+        num_qn_types, input_dim = 4, 150
+        net['l_in'] = lasagne.layers.InputLayer(shape=(None,input_dim),
+                                         input_var=input_var)
+
+        net['l_h1'] =  lasagne.layers.DenseLayer( net['l_in'],
+                                                  num_units=100,
+                                                  nonlinearity=lasagne.nonlinearities.rectify)
+
+        net['l_h1_drop'] = lasagne.layers.DropoutLayer(net['l_h1'], p=0.2)
+
+        net['l_h2'] =  lasagne.layers.DenseLayer( net['l_h1_drop'],
+                                                  num_units=100,
+                                                  nonlinearity=lasagne.nonlinearities.rectify)
+
+        net['l_h2_drop'] = lasagne.layers.DropoutLayer(net['l_h2'], p=0.2)
+
+        net['l_out'] = lasagne.layers.DenseLayer(
+                net['l_h2_drop'],
+                num_units=num_qn_types,
+                nonlinearity=lasagne.nonlinearities.softmax)
+        self.add_to_param_list( net['l_out'], lasagne.layers.get_all_params(net['l_out']), param_type='qn_classifier' )
+        print "Done building final MLP ..."
+                
+
+
+
+
     def build_vgg_feature_mlp(self, input_var):
         net = {}
         net['l_in'] = lasagne.layers.InputLayer(shape=(None,1000),
@@ -223,18 +193,34 @@ class vqa_type:
                                                   num_units=1000,
                                                   nonlinearity=lasagne.nonlinearities.rectify)
         
-        net['l_h2_drop'] = lasagne.layers.DropoutLayer(net['l_h2'], p=0.5)
-        
+        net['l_out'] = lasagne.layers.DropoutLayer(net['l_h2'], p=0.5)
         net['l_out'] = lasagne.layers.DenseLayer(
-                net['l_h2_drop'],
+                net['l_out'],
                 num_units=len(self.avocab),
                 nonlinearity=lasagne.nonlinearities.softmax)
-                #W = lasagne.init.Constant(0.),
-                #b = lasagne.init.Categorical(self.p_ans_vector))
         self.add_to_param_list( net['l_out'], lasagne.layers.get_all_params(net['l_out']), param_type='final_mlp' )
         print "Done building final MLP ..."
         return net
-        
+    
+    def build_softmax_yes_or_no(self, input_layer):
+        net = {}
+        net['l_out'] = lasagne.layers.DenseLayer(
+                input_layer,
+                num_units=2
+                nonlinearity=lasagne.nonlinearities.softmax)
+        self.add_to_param_list( net['l_out'], lasagne.layers.get_all_params(net['l_out']), param_type='softmax_y_or_n' )
+        return net
+
+    def build_softmax_numeric(self, input_layer):
+        net = {}
+        numeric_answer_types = 10
+        net['l_out'] = lasagne.layers.DenseLayer(
+                input_layer,
+                num_units=numeric_answer_types
+                nonlinearity=lasagne.nonlinearities.softmax)
+        self.add_to_param_list( net['l_out'], lasagne.layers.get_all_params(net['l_out']), param_type='softmax_numeric' )
+        return net
+
 
     def build_model(self):
         if not self.config['fine_tune_vgg']:
@@ -250,14 +236,14 @@ class vqa_type:
         return self.build_model_util(iX)
     
     def build_model_util(self,iX):
-        qX, mask, Y = self.qX, self.lstm_mask, self.Y
+        qX, mask, Y, sparse_indices = self.qX, self.lstm_mask, self.Y, self.sparse_indices
         q_lstm_net = self.build_1layer_question_lstm(qX, mask)
         ql_out = lasagne.layers.get_output(q_lstm_net['l_dense'])
         vgg_mlp_net = self.build_vgg_feature_mlp(iX)
         vgg_out = lasagne.layers.get_output(vgg_mlp_net['l_out'])
         mlp_input = self.combine_image_question_model(ql_out, vgg_out)
-        network = self.build_mlp_model(mlp_input)['l_out']
-        prediction = lasagne.layers.get_output(network, deterministic=False)
+        network = self.build_mlp_model(mlp_input, sparse_indices)['l_out']
+        prediction = lasagne.layers.get_output(network, sparse_indices=sparse_indices, deterministic=False)
         loss = lasagne.objectives.categorical_crossentropy(prediction, Y)
         loss = loss.mean()
         params = self.params
@@ -269,7 +255,7 @@ class vqa_type:
         test_prediction = T.argmax(test_prediction, axis=1)
         print "Compiling..."
         self.timer.set_checkpoint('compile')
-        train = theano.function([qX, mask, iX, Y], loss, updates=updates, allow_input_downcast=True)
+        train = theano.function([qX, mask, iX, Y, sparse_indices], loss, updates=updates, allow_input_downcast=True)
         predict = theano.function([qX, mask, iX], test_prediction, allow_input_downcast=True)
         print "Compile time(mins)", self.timer.print_checkpoint('compile')
         print "Done Compiling final model..."
@@ -350,7 +336,7 @@ class vqa_type:
 
     #************************************************************
 
-    def get_data(self, division_num ,mode, sanity_mode='False'):
+    def get_data(self, division_num ,mode,qn_type,sanity_mode='False'):
         qn, mask    = self.get_question_data(division_num, mode)    
         ans         = self.get_answer_data(division_num, mode)
         iX          = self.get_image_features(division_num, mode)
@@ -426,12 +412,27 @@ class vqa_type:
             return self.saver.load_array(fid=str(mode)+"ids")
         image_ids, question_ids = [],[]
         answer_types, answers   = [],[]
+        self.ans_type_dict = {} # key : qn_type, value : id
+        ans_types = 0
         for a_id,a in enumerate(self.id_info[mode]['top_k_ids']):
             answers.append(a['ans_id'])
-            answer_types.append(a['ans_type'])
             image_ids.append(a['im_id'])
             question_ids.append(a['qn_id'])
+            if a['ans_type'] not in self.ans_type_dict.keys():
+                self.ans_type_dict[a['ans_type']] = ans_types
+                ans_types += 1
+            answer_types.append(self.ans_type_dict[a['ans_type']])
         
+        self.ans_per_type = [[]]*ans_types
+        for itr,a_type in enumerate(answer_types):
+            self.ans_per_type[a_type].append(answers[itr])
+        self.ans_dict = {} # key:ansid, value:ansid if only ans_type was used in training
+        for a_type in range(ans_types):
+            self.ans_per_type[a_type] = sorted(self.ans_per_type[a_type])
+        for a in answers:
+            self.ans_dict[a] = self.ans_per_type[a_type].index(a)
+        print ans_types
+        exit(0)
         assert len(image_ids) == len(question_ids)
         assert len(image_ids) == len(answers)
 
