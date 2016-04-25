@@ -45,7 +45,7 @@ def get_config(image_mode='real'):
     config['grad_clip']                 = [-5,5]
     config['batch_size']                = 4096
     config['num_division']              = 50
-    config['experiment_id']             = str(sys.argv[2])#test_no_acc#Q_I_concatenate#no_yes_qn#lstmQ_NormI#3deep_lstmQ_I#'lstmQ_add_I'#'deep_lstmQ_I'#"deep_lstmQ_I"#lstmQ_I_all_qns"#"lstmQ_dot_I" #lstmQ_add_I
+    config['experiment_id']             = str(sys.argv[2])#qn_classifier#test_no_acc#Q_I_concatenate#no_yes_qn#lstmQ_NormI#3deep_lstmQ_I#'lstmQ_add_I'#'deep_lstmQ_I'#"deep_lstmQ_I"#lstmQ_I_all_qns"#"lstmQ_dot_I" #lstmQ_add_I
     return config
 
 if __name__ == "__main__":

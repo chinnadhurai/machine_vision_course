@@ -37,8 +37,11 @@ class vqa_type:
         self.lstm_mask                  = T.imatrix()
         self.iX                         = T.fmatrix()
         self.Y                          = T.ivector()
-        self.sparse_indices             = T.imatrix()
+        self.qtype                      = T.ivector()
+        self.sparse_indices             = T.ivector()
+        self.qembd                      = T.fmatrix()    
         self.params                     = []
+        self.ans_type_dict              = {'number': 2, 'other': 1, 'yes/no': 0}
         pprint(config)
         print "\n----------------------"
         print "\nPreping data set..."
@@ -58,16 +61,17 @@ class vqa_type:
         self.id_info = pickle.load( gzip.open( pfile, "rb" ) )
         self.num_division = config['num_division']
         self.grad_clip = config['grad_clip']
-        self.qdict, self.image_ids, self.question_ids, self.answer_type = {},{},{},{}
+        self.qdict, self.image_ids, self.question_ids, self.answer_types = {},{},{},{}
         self.answers, self.questions, self.mask, self.divisions, self.saved_params = {},{},{},{},{}
         self.timer.set_checkpoint('init')
         load_from_file= True
         for mode in ['train','val']:
             self.qdict[mode] = load_data.load_questions(self.config['questions_folder'], mode=mode)
-            self.image_ids[mode], self.question_ids[mode], self.answer_type[mode], self.answers[mode] = self.get_image_question_ans_ids(mode, load_from_file=load_from_file)
+            self.image_ids[mode], self.question_ids[mode], self.answer_types[mode], self.answers[mode] = self.get_image_question_ans_ids(mode, load_from_file=load_from_file)
             mbsize = len(self.image_ids[mode]) // self.num_division
             self.divisions[mode] = zip(range(0, len(self.image_ids[mode]), mbsize), range(mbsize, len(self.image_ids[mode]), mbsize))
             self.store_question_data(mode, load_from_file=load_from_file, save_image_features=False)
+        self.answer_type_util(mode='train')
         print "Init time taken(in mins)", self.timer.print_checkpoint('init')
         self.p_ans_vector = self.unigram_dist()
         print "Initialization done ..."
@@ -136,7 +140,8 @@ class vqa_type:
     
     
     def build_qn_classifier_mlp(self,input_var):
-        num_qn_types, input_dim = 4, 150
+        num_qn_types, input_dim = len(self.ans_type_dict), 1024
+        net = {}
         net['l_in'] = lasagne.layers.InputLayer(shape=(None,input_dim),
                                          input_var=input_var)
 
@@ -156,12 +161,9 @@ class vqa_type:
                 net['l_h2_drop'],
                 num_units=num_qn_types,
                 nonlinearity=lasagne.nonlinearities.softmax)
-        self.add_to_param_list( net['l_out'], lasagne.layers.get_all_params(net['l_out']), param_type='qn_classifier' )
-        print "Done building final MLP ..."
-                
-
-
-
+        #self.add_to_param_list( net['l_out'], lasagne.layers.get_all_params(net['l_out']), param_type='qn_classifier' )
+        print "Done building qn classifier MLP ..."
+        return net
 
     def build_vgg_feature_mlp(self, input_var):
         net = {}
@@ -193,34 +195,15 @@ class vqa_type:
                                                   num_units=1000,
                                                   nonlinearity=lasagne.nonlinearities.rectify)
         
-        net['l_out'] = lasagne.layers.DropoutLayer(net['l_h2'], p=0.5)
+        #net['l_out'] = lasagne.layers.DropoutLayer(net['l_h2'], p=0.5)
         net['l_out'] = lasagne.layers.DenseLayer(
-                net['l_out'],
+                net['l_h2'],
                 num_units=len(self.avocab),
                 nonlinearity=lasagne.nonlinearities.softmax)
         self.add_to_param_list( net['l_out'], lasagne.layers.get_all_params(net['l_out']), param_type='final_mlp' )
         print "Done building final MLP ..."
         return net
     
-    def build_softmax_yes_or_no(self, input_layer):
-        net = {}
-        net['l_out'] = lasagne.layers.DenseLayer(
-                input_layer,
-                num_units=2
-                nonlinearity=lasagne.nonlinearities.softmax)
-        self.add_to_param_list( net['l_out'], lasagne.layers.get_all_params(net['l_out']), param_type='softmax_y_or_n' )
-        return net
-
-    def build_softmax_numeric(self, input_layer):
-        net = {}
-        numeric_answer_types = 10
-        net['l_out'] = lasagne.layers.DenseLayer(
-                input_layer,
-                num_units=numeric_answer_types
-                nonlinearity=lasagne.nonlinearities.softmax)
-        self.add_to_param_list( net['l_out'], lasagne.layers.get_all_params(net['l_out']), param_type='softmax_numeric' )
-        return net
-
 
     def build_model(self):
         if not self.config['fine_tune_vgg']:
@@ -242,27 +225,57 @@ class vqa_type:
         vgg_mlp_net = self.build_vgg_feature_mlp(iX)
         vgg_out = lasagne.layers.get_output(vgg_mlp_net['l_out'])
         mlp_input = self.combine_image_question_model(ql_out, vgg_out)
-        network = self.build_mlp_model(mlp_input, sparse_indices)['l_out']
+        network = self.build_mlp_model(mlp_input)['l_out']
         prediction = lasagne.layers.get_output(network, sparse_indices=sparse_indices, deterministic=False)
-        loss = lasagne.objectives.categorical_crossentropy(prediction, Y)
+        prediction = T.nnet.softmax(prediction[:,sparse_indices])
+        loss =  lasagne.objectives.categorical_crossentropy(prediction, Y)
         loss = loss.mean()
         params = self.params
         all_grads = T.grad(loss, params)
         if self.grad_clip != None:
             all_grads = [T.clip(g, self.grad_clip[0], self.grad_clip[1]) for g in all_grads]
         updates = lasagne.updates.adam(all_grads, params, learning_rate=0.01)
-        test_prediction = lasagne.layers.get_output(network, deterministic=True)
+        
+        test_prediction = lasagne.layers.get_output(network, sparse_indices=sparse_indices, deterministic=True)
+        test_prediction = T.nnet.softmax(test_prediction[:,sparse_indices])
         test_prediction = T.argmax(test_prediction, axis=1)
         print "Compiling..."
         self.timer.set_checkpoint('compile')
-        train = theano.function([qX, mask, iX, Y, sparse_indices], loss, updates=updates, allow_input_downcast=True)
-        predict = theano.function([qX, mask, iX], test_prediction, allow_input_downcast=True)
+        train = theano.function([qX, mask, iX, Y, sparse_indices], [loss, ql_out], updates=updates, allow_input_downcast=True)
+        ans_predict = theano.function([qX, mask, iX, sparse_indices], test_prediction, allow_input_downcast=True)
         print "Compile time(mins)", self.timer.print_checkpoint('compile')
         print "Done Compiling final model..."
-        return train,predict
-    
+        return train, ans_predict
+
+    def build_qn_type_model(self, from_scratch=False):
+        qtype,qembd = self.qtype,self.qembd
+        qX, mask =  self.qX, self.lstm_mask
+        if from_scratch:
+            q_lstm_net = self.build_1layer_question_lstm(qX, mask)
+            qembd = lasagne.layers.get_output(q_lstm_net['l_dense'])
+        q_type_net = self.build_qn_classifier_mlp(qembd)
+        q_type_pred = lasagne.layers.get_output(q_type_net['l_out'],deterministic=False)
+        loss = lasagne.objectives.categorical_crossentropy(q_type_pred, qtype)
+        loss = loss.mean()
+        params = lasagne.layers.get_all_params(q_type_net['l_out'])
+        updates = lasagne.updates.adam(loss, params, learning_rate=0.01)
+        qtype_test_pred = lasagne.layers.get_output(q_type_net['l_out'],deterministic=True)
+        qtype_test_pred = T.argmax(qtype_test_pred, axis=1)
+        print "Compiling..."
+        self.timer.set_checkpoint('compile')
+        if from_scratch:
+            train = theano.function([qX, mask, qtype], loss, updates=updates, allow_input_downcast=True)
+            qtype_predict = theano.function([qX, mask], qtype_test_pred, allow_input_downcast=True)
+        else:
+            train = theano.function([qembd, qtype], loss, updates=updates, allow_input_downcast=True)
+            qtype_predict = theano.function([qembd], qtype_test_pred, allow_input_downcast=True)
+        print "Compile time(mins)", self.timer.print_checkpoint('compile')
+        print "Done Compiling qtype model..."
+        return train, qtype_predict
+
     def train(self):
         train, predict = self.build_model()
+        qtrain, qpredict = self.build_qn_type_model()
         num_training_divisions  = int(self.num_division *self.config['train_data_percent']/100)
         num_val_divisions       = num_training_divisions
         self.timer.set_checkpoint('param_save')
@@ -311,35 +324,67 @@ class vqa_type:
         #print [(self.aword[a],a) for a in Y[s:s+2]]
         return acc
 
+    #********* SANITY *********
+    
     def sanity_check_train(self):
-        train, predict = self.build_model()
-        qn, mask, iX, ans = self.get_data(2, mode='train', sanity_mode=True)
+        atrain, apredict = self.build_model()
+        qtrain, qpredict = self.build_qn_type_model(from_scratch=True)
         l_loss,l_acc = [],[]
-        for i in range(20):
-            loss, acc = self.toy_train_util(i,qn, mask, iX, ans,train, predict)    
+        div_id = 2
+        for i in range(150):
+                qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='train', a_type=1,train_only_qn=True)
+                acc = self.toy_qn_train_util(qn, mask, qtypes, qtrain, qpredict)
+                l.print_overwrite("Acc % :", acc * 100.0)
+                
+        for i in range(200):
+            for atype in range(0,len(self.ans_type_dict)):
+                qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='train', a_type=atype)
+                loss, acc = self.toy_train_util(i,qn, mask, iX, ans, qtypes, sparse_ids, atrain, qtrain, qpredict, apredict) 
+                
             l_loss.append(loss)
             l_acc.append(acc)
         
-    def toy_train_util(self,epoch, qX, mask, iX, Y, train, predict):
+    def toy_qn_train_util( self,qX, mask, qtypes, qtrain, qpredict):
+        mb = 2000
+        qloss = qtrain(qX[:mb],mask[:mb], qtypes[:mb])
+        pred_qtypes = qpredict(qX[:mb],mask[:mb])
+        return np.mean(pred_qtypes == qtypes[:mb])
+
+    def toy_train_util(self,epoch, qX, mask, iX, Y, qtype, sparse_ids, atrain, qtrain, qpredict, apredict):
         mb = 400
-        loss = train(qX[:mb], mask[:mb], iX[:mb], Y[:mb])
-        pred = predict(qX[:mb], mask[:mb], iX[:mb])
+        aloss,qembd = atrain(qX[:mb], mask[:mb], iX[:mb], Y[:mb], sparse_ids)
+        pred_qtypes = qpredict(qX[:mb],mask[:mb])
+        pred = []
+        Y_val = []
+        for itr,pq in enumerate(pred_qtypes):
+            ans = apredict(qX[itr:itr+1], mask[itr:itr+1], iX[itr:itr+1], self.ans_per_type[pq]) 
+            pred.append( self.ans_per_type[pq][ans] )
+            try:
+                Y_val.append( self.ans_per_type[qtype[0]][Y[:mb][itr]] )
+            except IndexError:
+                print pq, ans, qtype[0], itr, len(Y), len(pred_qtypes)
+                print Y[:mb][itr], self.ans_per_type[pq][ans] , self.ans_per_type[qtype[0]][Y[:mb][itr]] 
+                exit(0)
+        pred = np.array(pred)
+        #Y_val = np.array(Y_val)
         print "Epoch         : ", epoch
-        print "cross_entropy : ", loss
-        print "train acc     : ", 100.0*np.mean(pred==Y[:mb])
-        print "predict      ", [(self.aword[a],a) for a in pred[:10]]
-        print "ground truth ", [(self.aword[a],a) for a in Y[:10]]
-        return loss, 100.0*np.mean(pred==Y[:mb])   
+        print "cross_entropy : ", aloss
+        print "train acc     : ", 100.0*np.mean(pred==Y_val)
+        #print "predict      ", [(self.aword[a],a) for a in pred[:10]]
+        #print "ground truth ", [(self.aword[a],a) for a in Y_val[:10]]
+        
+        return aloss, 100.0*np.mean(pred==Y[:mb])   
     #************************************************************
 
     #            TRAINING / VAL DATA RETRIVAL APIS     
 
     #************************************************************
 
-    def get_data(self, division_num ,mode,qn_type,sanity_mode='False'):
+    def get_data(self, division_num ,mode,a_type,train_only_qn=False):
         qn, mask    = self.get_question_data(division_num, mode)    
         ans         = self.get_answer_data(division_num, mode)
         iX          = self.get_image_features(division_num, mode)
+        qtypes      = self.get_answer_types(division_num, mode)
         #qn = self.get_one_hot(qn, one_hot_size=len(self.qvocab))
         """
         print "Training data shapes ..."
@@ -348,9 +393,17 @@ class vqa_type:
         print "image feature: ",iX.shape
         print "ans          : ",ans.shape
         """
+        sparse_ids = None 
+        if not train_only_qn:
+            yn_ids = [ itr for itr,a in enumerate(ans) if a in self.ans_per_type[a_type]]
+            ans = [ self.ans_per_type[a_type].index(a) for a in ans if a in self.ans_per_type[a_type]]
+            qn, mask, iX = qn[yn_ids], mask[yn_ids], iX[yn_ids] 
+            qtypes, sparse_ids = np.ones(len(yn_ids))*int(a_type), self.ans_per_type[a_type]
+        
         if 'yes' in self.config['experiment_id'].lower():
             yn_ids = [ itr for itr,i in enumerate(ans) if self.aword[i] != 'yes' and self.aword[i] != 'no']
             qn, mask, iX, ans = qn[yn_ids], mask[yn_ids], iX[yn_ids], ans[yn_ids]
+        
         if 'norm' in self.config['experiment_id'].lower():
             print "normlized input"
             norms = 1.0/np.linalg.norm(iX,axis=1)
@@ -359,8 +412,12 @@ class vqa_type:
             iX = np.dot(np.diag(norms), iX)
             print iX.shape, iX[0,:10]
             
-        return qn, mask, iX, ans
+        return qn, mask, iX, ans, qtypes, sparse_ids
     
+    def get_answer_types(self,division_id,mode):
+        s,e = self.divisions[mode][division_id]
+        return self.answer_types[mode][s:e]
+ 
     def get_one_hot(self, qn, one_hot_size):
         output = np.zeros((qn.shape[0], qn.shape[1], one_hot_size), dtype='uint8')
         for i in range(qn.shape[0]):
@@ -422,23 +479,49 @@ class vqa_type:
                 self.ans_type_dict[a['ans_type']] = ans_types
                 ans_types += 1
             answer_types.append(self.ans_type_dict[a['ans_type']])
-        
-        self.ans_per_type = [[]]*ans_types
-        for itr,a_type in enumerate(answer_types):
-            self.ans_per_type[a_type].append(answers[itr])
-        self.ans_dict = {} # key:ansid, value:ansid if only ans_type was used in training
-        for a_type in range(ans_types):
-            self.ans_per_type[a_type] = sorted(self.ans_per_type[a_type])
-        for a in answers:
-            self.ans_dict[a] = self.ans_per_type[a_type].index(a)
-        print ans_types
-        exit(0)
+        pprint( self.ans_type_dict)
         assert len(image_ids) == len(question_ids)
         assert len(image_ids) == len(answers)
 
         self.saver.save_array([image_ids, question_ids, answer_types, answers], fid=str(mode)+"ids")
         return np.array(image_ids), np.array(question_ids), np.array(answer_types), np.array(answers)
-    
+    #self.ans_type_dict              = {'number': 2, 'other': 1, 'yes/no': 0}
+    def answer_type_util(self,mode):
+        ans_types = len(self.ans_type_dict)
+        self.ans_per_type = dict([(i,[]) for i in range(ans_types)])
+        non_numeric_ans = []
+        for itr,a_type in enumerate(self.answer_types[mode]):
+            a = self.answers[mode][itr]
+            isdigit = (self.aword[a]).isdigit()
+            yes_no =  (self.aword[a]).lower() == 'yes' or (self.aword[a]).lower() == 'no'
+            
+            if isdigit:
+                a_type = self.ans_type_dict['number']
+                self.answer_types[mode][itr] = a_type
+            if not isdigit and a_type == self.ans_type_dict['number']:
+                a_type = self.ans_type_dict['other']
+                self.answer_types[mode][itr] = a_type
+            if yes_no:
+                a_type = self.ans_type_dict['yes/no']
+                self.answer_types[mode][itr] = a_type      
+            if a not in self.ans_per_type[a_type]:
+                self.ans_per_type[a_type].append(a)
+                
+        # hacky coz dataset is messed up
+        self.ans_per_type[1].append( self.ans_per_type[0][-1] )
+        #self.ans_per_type[1].append( non_numeric_ans )
+        self.ans_per_type[0] = self.ans_per_type[0][:2]
+        """
+        print 'yes',[self.aword[a] for a in self.ans_per_type[0]] 
+        print 'other',[self.aword[a] for a in self.ans_per_type[1][:20]]
+        print 'number',[self.aword[a] for a in self.ans_per_type[2]]
+        print 554 in self.ans_per_type[1]
+        print 864 in self.ans_per_type[1]
+        """
+        print len(self.ans_per_type[1]), len(self.ans_per_type[2])
+        for a_type in range(ans_types):
+            self.ans_per_type[a_type] = sorted(self.ans_per_type[a_type])
+
     def get_image_file_id(self,image_id,image_db=None):
         for file_id, ilist in enumerate(image_db):
             try:

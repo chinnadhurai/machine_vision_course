@@ -1,0 +1,46 @@
+Configuration :
+{'annotations_folder': '/data/lisatmp4/chinna/data/input/vqa/real_images/annotations',
+ 'batch_size': 4096,
+ 'bptt_trunk_steps': -1,
+ 'checkpoint_interval': 30,
+ 'cleaned_images_folder': '/data/lisatmp4/chinna/data/input/vqa/real_images/cleaned_images',
+ 'dpath': '/data/lisatmp4/chinna/data/input/vqa',
+ 'epochs': 15,
+ 'experiment_id': 'qn_classifier',
+ 'fine_tune_vgg': False,
+ 'grad_clip': [-5, 5],
+ 'load_from_saved_params': False,
+ 'lstm_hidden_dim': 300,
+ 'mlp_input_dim': 1024,
+ 'num_division': 50,
+ 'opath': '/data/lisatmp4/chinna/data/ift6268/project/logging',
+ 'questions_folder': '/data/lisatmp4/chinna/data/input/vqa/real_images/questions',
+ 'real_abstract_images': '/data/lisatmp4/chinna/data/input/vqa/real_images',
+ 'saved_params': '/data/lisatmp4/chinna/data/ift6268/project/logging/params',
+ 'top_k_answers': 1000,
+ 'train_data_percent': 100,
+ 'vgg_features_folder': '/data/lisatmp4/chinna/data/input/vqa/real_images/vgg_features',
+ 'vgg_params': '/data/lisatmp4/chinna/data/input/vqa/vgg_params/vgg16.pkl',
+ 'vqa_model_folder': '/data/lisatmp4/chinna/data/input/vqa/real_images/vgg_features/vqa_modelA'}
+
+----------------------
+
+Preping data set...
+Timer created ...
+File Saver initiliazed, loc : /data/lisatmp4/chinna/data/input/vqa/real_images/questions/temp
+File Saver initiliazed, loc : /data/lisatmp4/chinna/data/input/vqa/real_images/qn_classifier
+Plotter initiliazed, loc : /data/lisatmp4/chinna/data/input/vqa/real_images/plots/qn_classifier
+Answer vocab size    : 1000
+question vocab size  : 13183
+Init time taken(in mins) 0.170537650585
+Initialization done ...
+Done building question LSTM ...
+Done building vgg feature MLP ...
+Done building final MLP ...
+Compiling...
+Compile time(mins) 0.324781799316
+Done Compiling final model...
+Done building qn classifier MLP ...
+Compiling...
+Compile time(mins) 0.0223757664363
+Done Compiling qtype model...
