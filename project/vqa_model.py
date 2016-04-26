@@ -41,7 +41,7 @@ class vqa_type:
         self.sparse_indices             = T.ivector()
         self.qembd                      = T.fmatrix()    
         self.params                     = []
-        self.ans_type_dict              = {'number': 2, 'other': 1, 'yes/no': 0}
+        self.ans_type_dict              = {'other': 1, 'yes/no': 0, 'number': 2}
         pprint(config)
         print "\n----------------------"
         print "\nPreping data set..."
@@ -71,7 +71,7 @@ class vqa_type:
             mbsize = len(self.image_ids[mode]) // self.num_division
             self.divisions[mode] = zip(range(0, len(self.image_ids[mode]), mbsize), range(mbsize, len(self.image_ids[mode]), mbsize))
             self.store_question_data(mode, load_from_file=load_from_file, save_image_features=False)
-        self.answer_type_util(mode='train')
+            self.answer_type_util(mode=mode)
         print "Init time taken(in mins)", self.timer.print_checkpoint('init')
         self.p_ans_vector = self.unigram_dist()
         print "Initialization done ..."
@@ -81,7 +81,6 @@ class vqa_type:
             self.params.append(p)
         local_dict = {}
         local_dict['params'] = l_params
-        uid = self.timer.get_uid()
         self.saved_params[param_type] = local_dict
         self.load_saved_params(network,param_type)
     
@@ -105,13 +104,12 @@ class vqa_type:
         return params['param values']
     
     def build_question_boW(self, input_var, mask=None):
-        input_dim, seq_len = len(self.qvocab), self.max_qlen
+        input_dim, seq_len = len(self.qvocab), 6#self.max_qlen
 
         l_in = lasagne.layers.InputLayer(shape=(None, seq_len),
                                          input_var=input_var)
 
-        l_embd = lasagne.layers.EmbeddingLayer(l_in, input_dim, self.config['lstm_hidden_dim'])
-        self.add_to_param_list( l_dense, lasagne.layers.get_all_params(l_embd) , param_type='qboW')
+        l_embd = lasagne.layers.EmbeddingLayer(l_in, input_size=len(self.qvocab), output_size=self.config['lstm_hidden_dim'])
         net  = {'l_in':l_in, 'l_embd':l_embd}
         print "Done building question LSTM ..."
         return net
@@ -138,27 +136,41 @@ class vqa_type:
         print "Done building question LSTM ..."
         return net
     
-    
+    def build_qn_classifier_lstm(self, input_var, mask=None):
+        input_dim, seq_len = len(self.qvocab), self.max_qlen
+        # (batch size, max sequence length, number of features)
+
+        l_in = lasagne.layers.InputLayer(shape=(None, seq_len),#, input_dim),
+                                            input_var=input_var)
+        lstm_params = lasagne.layers.get_all_params(l_in)
+        l_embd = lasagne.layers.EmbeddingLayer(l_in, input_dim, 75)#self.config['lstm_hidden_dim'])
+        l_mask = lasagne.layers.InputLayer(shape=(None, seq_len), input_var=mask)
+        l_lstm = lasagne.layers.LSTMLayer(l_embd,
+                                          num_units             = 75,#self.config['lstm_hidden_dim'],
+                                          only_return_final     = True,
+                                          gradient_steps        = self.config['bptt_trunk_steps'],
+                                          mask_input            = l_mask
+                                         )
+        l_dense = lasagne.layers.DenseLayer(l_lstm, num_units=75)#self.config['mlp_input_dim'])
+        self.add_to_param_list( l_dense, lasagne.layers.get_all_params(l_dense) , param_type='qlstm')
+        net  = {'l_in':l_in, 'l_lstm':l_lstm, 'l_dense':l_dense}
+        print "Done building question LSTM ..."
+        return net    
+
     def build_qn_classifier_mlp(self,input_var):
-        num_qn_types, input_dim = len(self.ans_type_dict), 1024
+        num_qn_types, input_dim = len(self.ans_type_dict),75#1024# self.config['lstm_hidden_dim']
         net = {}
         net['l_in'] = lasagne.layers.InputLayer(shape=(None,input_dim),
                                          input_var=input_var)
-
+        
         net['l_h1'] =  lasagne.layers.DenseLayer( net['l_in'],
-                                                  num_units=100,
+                                                  num_units=1000,
                                                   nonlinearity=lasagne.nonlinearities.rectify)
 
-        net['l_h1_drop'] = lasagne.layers.DropoutLayer(net['l_h1'], p=0.2)
-
-        net['l_h2'] =  lasagne.layers.DenseLayer( net['l_h1_drop'],
-                                                  num_units=100,
-                                                  nonlinearity=lasagne.nonlinearities.rectify)
-
-        net['l_h2_drop'] = lasagne.layers.DropoutLayer(net['l_h2'], p=0.2)
+        net['l_h1_drop'] = lasagne.layers.DropoutLayer(net['l_h1'], p=0.5)
 
         net['l_out'] = lasagne.layers.DenseLayer(
-                net['l_h2_drop'],
+                net['l_h1_drop'],
                 num_units=num_qn_types,
                 nonlinearity=lasagne.nonlinearities.softmax)
         #self.add_to_param_list( net['l_out'], lasagne.layers.get_all_params(net['l_out']), param_type='qn_classifier' )
@@ -251,21 +263,40 @@ class vqa_type:
         qtype,qembd = self.qtype,self.qembd
         qX, mask =  self.qX, self.lstm_mask
         if from_scratch:
-            q_lstm_net = self.build_1layer_question_lstm(qX, mask)
+            #q_bow_net = self.build_question_boW(qX)
+            #q_bow = lasagne.layers.get_output(q_bow_net['l_embd'])
+            #l2_penalty_qbow = regularize_layer_params(q_bow_net['l_embd'], l2)
+            #qbow_params = lasagne.layers.get_all_params(q_bow_net['l_embd'])
+            #qembd = T.sum(q_bow,axis=1)
+            q_lstm_net = self.build_qn_classifier_lstm(qX, mask)
+            qlstm_params = lasagne.layers.get_all_params(q_lstm_net['l_dense'])
+            l2_penalty_qlstm = regularize_layer_params(q_lstm_net['l_dense'], l2)
+            #l2_penalty_qlstm += regularize_layer_params(q_lstm_net['l_lstm'], l2)
             qembd = lasagne.layers.get_output(q_lstm_net['l_dense'])
         q_type_net = self.build_qn_classifier_mlp(qembd)
         q_type_pred = lasagne.layers.get_output(q_type_net['l_out'],deterministic=False)
+        l2_penalty_mlp = regularize_layer_params(q_type_net['l_out'], l2)
         loss = lasagne.objectives.categorical_crossentropy(q_type_pred, qtype)
-        loss = loss.mean()
-        params = lasagne.layers.get_all_params(q_type_net['l_out'])
-        updates = lasagne.updates.adam(loss, params, learning_rate=0.01)
+        loss = loss.mean() + l2_penalty_mlp
+        loss += l2_penalty_qlstm
+        params = []
+        qmlp_params = lasagne.layers.get_all_params(q_type_net['l_out'])
+        for p in qmlp_params:
+            params.append(p)
+        for p in qlstm_params:
+            params.append(p)
+        all_grads = T.grad(loss, params)
+        if self.grad_clip != None:
+            all_grads = [T.clip(g, self.grad_clip[0], self.grad_clip[1]) for g in all_grads]
+
+        updates = lasagne.updates.adam(all_grads, params, learning_rate=0.003)
         qtype_test_pred = lasagne.layers.get_output(q_type_net['l_out'],deterministic=True)
         qtype_test_pred = T.argmax(qtype_test_pred, axis=1)
         print "Compiling..."
         self.timer.set_checkpoint('compile')
         if from_scratch:
-            train = theano.function([qX, mask, qtype], loss, updates=updates, allow_input_downcast=True)
-            qtype_predict = theano.function([qX, mask], qtype_test_pred, allow_input_downcast=True)
+            train = theano.function([qX,mask, qtype], loss, updates=updates, allow_input_downcast=True)
+            qtype_predict = theano.function([qX,mask], qtype_test_pred, allow_input_downcast=True)
         else:
             train = theano.function([qembd, qtype], loss, updates=updates, allow_input_downcast=True)
             qtype_predict = theano.function([qembd], qtype_test_pred, allow_input_downcast=True)
@@ -274,12 +305,32 @@ class vqa_type:
         return train, qtype_predict
 
     def train(self):
-        train, predict = self.build_model()
-        qtrain, qpredict = self.build_qn_type_model()
+        atrain, apredict = self.build_model()
+        qtrain, qpredict = self.build_qn_type_model(from_scratch=True)
         num_training_divisions  = int(self.num_division *self.config['train_data_percent']/100)
         num_val_divisions       = num_training_divisions
         self.timer.set_checkpoint('param_save')
         l_loss,l_t_acc,l_v_acc = [],[],[]
+
+        for epoch in range(3):#self.config['epochs']):
+            print '\nEpoch :', epoch
+            l_loss,l_t_acc,l_v_acc = [],[],[]
+            for div_id in range(num_training_divisions):
+                qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='train', a_type=1,train_only_qn=True)
+                qloss = qtrain(qn, mask, qtypes)
+                pred_qtypes = qpredict(qn,mask)
+                acc = np.mean(pred_qtypes == qtypes)
+                l_t_acc.append(acc*100.0)
+            for div_id in range(num_val_divisions):
+                qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='val', a_type=1,train_only_qn=True)
+                pred_qtypes = qpredict(qn,mask)
+                if epoch == 2:
+                    print pred_qtypes[np.random.randint(100,size=10)]
+                l_v_acc.append(100.0*np.mean(pred_qtypes == qtypes))
+            l_t_acc, l_v_acc = np.mean(np.array(l_t_acc)), np.mean(np.array(l_v_acc))
+            print "train acc %", l_t_acc
+            print "val acc %", l_v_acc
+        exit(0)
         for epoch in range(self.config['epochs']):
             train_accuracy,total = 0,0
             self.timer.set_checkpoint('train') 
@@ -301,7 +352,7 @@ class vqa_type:
                 val_acc.append(self.acc_util(qn, mask, iX, ans, train, predict))
                 qn, mask, iX, ans = self.get_data(division_id, mode='train')
                 train_acc.append(self.acc_util(qn, mask, iX, ans, train, predict))           
-            val_acc = np.mean(np.array(val_acc))*100.0
+            val_acc   = np.mean(np.array(val_acc))*100.0
             train_acc = np.mean(np.array(train_acc))*100.0
             print"Training accuracy     : %f, time taken (mins) : %f"%(train_acc ,self.timer.print_checkpoint('val') )   
             print"Val accuracy          : %f, time taken (mins) : %f\n"%(val_acc   ,self.timer.print_checkpoint('val') )
@@ -324,6 +375,18 @@ class vqa_type:
         #print [(self.aword[a],a) for a in Y[s:s+2]]
         return acc
 
+
+    def qn_classifier_hacky(self,qn):
+        qtypes = []
+        for q in qn:
+            if self.avocab['How'] in q:
+                qtypes.append(self.self.ans_type_dict['number'])             # = {'number': 2, 'other': 1, 'yes/no': 0}
+            elif self.avocab['is'] == q[0] or self.avocab['are'] == q[0] or \
+                 self.avocab['do'] == q[0] or self.avocab['does'] == q[0] :
+                qtypes.append(self.self.ans_type_dict['yes/no'])
+            else:
+                 qtypes.append(self.self.ans_type_dict['other'])
+        return np.array(qtypes)
     #********* SANITY *********
     
     def sanity_check_train(self):
@@ -344,13 +407,13 @@ class vqa_type:
             l_loss.append(loss)
             l_acc.append(acc)
         
-    def toy_qn_train_util( self,qX, mask, qtypes, qtrain, qpredict):
+    def toy_qn_train_util( self,qX, qtypes, qtrain, qpredict):
         mb = 2000
-        qloss = qtrain(qX[:mb],mask[:mb], qtypes[:mb])
-        pred_qtypes = qpredict(qX[:mb],mask[:mb])
+        qloss = qtrain(qX[:mb], qtypes[:mb])
+        pred_qtypes = qpredict(qX[:mb])
         return np.mean(pred_qtypes == qtypes[:mb])
 
-    def toy_train_util(self,epoch, qX, mask, iX, Y, qtype, sparse_ids, atrain, qtrain, qpredict, apredict):
+    def toy_train_util(self,epoch, qX, mask, iX, Y, qtype, sparse_i, atrain, qtrain, qpredict, apredict):
         mb = 400
         aloss,qembd = atrain(qX[:mb], mask[:mb], iX[:mb], Y[:mb], sparse_ids)
         pred_qtypes = qpredict(qX[:mb],mask[:mb])
@@ -359,19 +422,14 @@ class vqa_type:
         for itr,pq in enumerate(pred_qtypes):
             ans = apredict(qX[itr:itr+1], mask[itr:itr+1], iX[itr:itr+1], self.ans_per_type[pq]) 
             pred.append( self.ans_per_type[pq][ans] )
-            try:
-                Y_val.append( self.ans_per_type[qtype[0]][Y[:mb][itr]] )
-            except IndexError:
-                print pq, ans, qtype[0], itr, len(Y), len(pred_qtypes)
-                print Y[:mb][itr], self.ans_per_type[pq][ans] , self.ans_per_type[qtype[0]][Y[:mb][itr]] 
-                exit(0)
+            Y_val.append( self.ans_per_type[qtype[0]][Y[:mb][itr]] )
         pred = np.array(pred)
-        #Y_val = np.array(Y_val)
+        Y_val = np.array(Y_val)
         print "Epoch         : ", epoch
         print "cross_entropy : ", aloss
         print "train acc     : ", 100.0*np.mean(pred==Y_val)
-        #print "predict      ", [(self.aword[a],a) for a in pred[:10]]
-        #print "ground truth ", [(self.aword[a],a) for a in Y_val[:10]]
+        print "predict      ", [(self.aword[a],a) for a in pred[:10]]
+        print "ground truth ", [(self.aword[a],a) for a in Y_val[:10]]
         
         return aloss, 100.0*np.mean(pred==Y[:mb])   
     #************************************************************
@@ -485,7 +543,7 @@ class vqa_type:
 
         self.saver.save_array([image_ids, question_ids, answer_types, answers], fid=str(mode)+"ids")
         return np.array(image_ids), np.array(question_ids), np.array(answer_types), np.array(answers)
-    #self.ans_type_dict              = {'number': 2, 'other': 1, 'yes/no': 0}
+    
     def answer_type_util(self,mode):
         ans_types = len(self.ans_type_dict)
         self.ans_per_type = dict([(i,[]) for i in range(ans_types)])
@@ -494,7 +552,19 @@ class vqa_type:
             a = self.answers[mode][itr]
             isdigit = (self.aword[a]).isdigit()
             yes_no =  (self.aword[a]).lower() == 'yes' or (self.aword[a]).lower() == 'no'
-            
+            if yes_no:
+                a_type = self.ans_type_dict['yes/no']
+                self.answer_types[mode][itr] = a_type
+            else:
+                if isdigit:
+                    a_type = self.ans_type_dict['number']
+                    self.answer_types[mode][itr] = a_type
+                else:
+                    a_type = self.ans_type_dict['other']
+                    self.answer_types[mode][itr] = a_type
+            if a not in self.ans_per_type[a_type]:
+                self.ans_per_type[a_type].append(a)
+            """
             if isdigit:
                 a_type = self.ans_type_dict['number']
                 self.answer_types[mode][itr] = a_type
@@ -506,19 +576,21 @@ class vqa_type:
                 self.answer_types[mode][itr] = a_type      
             if a not in self.ans_per_type[a_type]:
                 self.ans_per_type[a_type].append(a)
-                
+            """    
+        """
         # hacky coz dataset is messed up
         self.ans_per_type[1].append( self.ans_per_type[0][-1] )
         #self.ans_per_type[1].append( non_numeric_ans )
         self.ans_per_type[0] = self.ans_per_type[0][:2]
         """
+        
         print 'yes',[self.aword[a] for a in self.ans_per_type[0]] 
         print 'other',[self.aword[a] for a in self.ans_per_type[1][:20]]
+        """
         print 'number',[self.aword[a] for a in self.ans_per_type[2]]
         print 554 in self.ans_per_type[1]
         print 864 in self.ans_per_type[1]
         """
-        print len(self.ans_per_type[1]), len(self.ans_per_type[2])
         for a_type in range(ans_types):
             self.ans_per_type[a_type] = sorted(self.ans_per_type[a_type])
 
