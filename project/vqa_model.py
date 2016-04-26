@@ -253,7 +253,7 @@ class vqa_type:
         test_prediction = T.argmax(test_prediction, axis=1)
         print "Compiling..."
         self.timer.set_checkpoint('compile')
-        train = theano.function([qX, mask, iX, Y, sparse_indices], [loss, ql_out], updates=updates, allow_input_downcast=True)
+        train = theano.function([qX, mask, iX, Y, sparse_indices], [loss], updates=updates, allow_input_downcast=True)
         ans_predict = theano.function([qX, mask, iX, sparse_indices], test_prediction, allow_input_downcast=True)
         print "Compile time(mins)", self.timer.print_checkpoint('compile')
         print "Done Compiling final model..."
@@ -311,26 +311,26 @@ class vqa_type:
         num_val_divisions       = num_training_divisions
         self.timer.set_checkpoint('param_save')
         l_loss,l_t_acc,l_v_acc = [],[],[]
-
-        for epoch in range(3):#self.config['epochs']):
+        print "Training qn classifier"
+        for epoch in range(2):#self.config['epochs']):
             print '\nEpoch :', epoch
             l_loss,l_t_acc,l_v_acc = [],[],[]
             for div_id in range(num_training_divisions):
-                qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='train', a_type=1,train_only_qn=True)
+                qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='train')
                 qloss = qtrain(qn, mask, qtypes)
                 pred_qtypes = qpredict(qn,mask)
                 acc = np.mean(pred_qtypes == qtypes)
                 l_t_acc.append(acc*100.0)
             for div_id in range(num_val_divisions):
-                qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='val', a_type=1,train_only_qn=True)
+                qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='val')
                 pred_qtypes = qpredict(qn,mask)
-                if epoch == 2:
-                    print pred_qtypes[np.random.randint(100,size=10)]
                 l_v_acc.append(100.0*np.mean(pred_qtypes == qtypes))
             l_t_acc, l_v_acc = np.mean(np.array(l_t_acc)), np.mean(np.array(l_v_acc))
             print "train acc %", l_t_acc
             print "val acc %", l_v_acc
-        exit(0)
+        
+        print "Training VQA"
+        l_loss,l_t_acc,l_v_acc = [],[],[]
         for epoch in range(self.config['epochs']):
             train_accuracy,total = 0,0
             self.timer.set_checkpoint('train') 
@@ -338,55 +338,44 @@ class vqa_type:
                 self.dump_current_params()
                 self.timer.set_checkpoint('param_save')
             loss = []
-            for division_id in range(num_training_divisions):
-                qn, mask, iX, ans = self.get_data(division_id, mode='train')
-                loss.append(self.train_util(qn, mask, iX, ans, train, predict))
+            for div_id in range(num_training_divisions):
+                for a_type in range(len(self.ans_type_dict)):
+                    qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='train', a_type=a_type)
+                    loss.append(self.train_util(qn, mask, iX, ans, sparse_ids, atrain, apredict))
             loss = np.mean(np.array(loss))
             l_loss.append(loss)
             print"Epoch                 : ",epoch
             print"cross_entropy         : %f, time taken (mins) : %f"%(loss,self.timer.print_checkpoint('train'))
-            val_acc,train_acc = [],[]
-            self.timer.set_checkpoint('val')
-            for division_id in range(num_val_divisions):
-                qn, mask, iX, ans = self.get_data(division_id, mode='val')
-                val_acc.append(self.acc_util(qn, mask, iX, ans, train, predict))
-                qn, mask, iX, ans = self.get_data(division_id, mode='train')
-                train_acc.append(self.acc_util(qn, mask, iX, ans, train, predict))           
-            val_acc   = np.mean(np.array(val_acc))*100.0
-            train_acc = np.mean(np.array(train_acc))*100.0
-            print"Training accuracy     : %f, time taken (mins) : %f"%(train_acc ,self.timer.print_checkpoint('val') )   
-            print"Val accuracy          : %f, time taken (mins) : %f\n"%(val_acc   ,self.timer.print_checkpoint('val') )
-            l_v_acc.append(val_acc)
-            l_t_acc.append(train_acc)
-        #self.plot_loss(l_loss)
-        #self.plot_train_val(l_t_acc,l_v_acc)
+        val_acc,train_acc = [],[]
+        self.timer.set_checkpoint('val')
+        for division_id in range(num_val_divisions):
+            qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(division_id, mode='val')
+            val_acc.append(self.acc_util(qn, mask, iX, ans, apredict, qpredict))
+            qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(division_id, mode='train')
+            train_acc.append(self.acc_util(qn, mask, iX, ans, apredict, qpredict))           
+        val_acc   = np.mean(np.array(val_acc))
+        train_acc = np.mean(np.array(train_acc))
+        print"Training accuracy     : %f, time taken (mins) : %f"%(train_acc ,self.timer.print_checkpoint('val') )   
+        print"Val accuracy          : %f, time taken (mins) : %f\n"%(val_acc   ,self.timer.print_checkpoint('val') )
+        l_v_acc.append(val_acc)
+        l_t_acc.append(train_acc)
         self.exp_saver.append_array([l_loss,l_t_acc, l_v_acc],fid='loss_t_v_acc') 
 
-    def train_util(self, qX, mask, iX, Y, train, predict):
-        mb = self.config['batch_size']
-        loss = train(qX[:mb], mask[:mb], iX[:mb], Y[:mb])
+    def train_util(self, qn, mask, iX, Y, sparse_ids, train, predict):
+        loss = train(qn, mask, iX, Y, sparse_ids)
         return loss
     
-    def acc_util(self, qX, mask, iX, Y, train, predict):
-        mb = self.config['batch_size'] 
-        pred = predict(qX[:mb], mask[:mb] ,iX[:mb])
-        acc = np.mean(pred == Y[:mb])
-        #print [(self.aword[a],a) for a in pred[:2]]
-        #print [(self.aword[a],a) for a in Y[s:s+2]]
+    def acc_util(self, qn, mask, iX, Y, apredict, qpredict):
+        pred_qtypes = qpredict(qn, mask)
+        pred = []
+        for itr,qtype in enumerate(pred_qtypes[:100]):
+            temp_pred = apredict(qn[itr:itr+1], mask[itr:itr+1], iX[itr:itr+1], self.ans_per_type[qtype])
+            pred.append(self.ans_per_type[qtype][temp_pred])
+        pred = np.array(pred)
+        acc = np.mean(pred == Y)*100.0
         return acc
 
 
-    def qn_classifier_hacky(self,qn):
-        qtypes = []
-        for q in qn:
-            if self.avocab['How'] in q:
-                qtypes.append(self.self.ans_type_dict['number'])             # = {'number': 2, 'other': 1, 'yes/no': 0}
-            elif self.avocab['is'] == q[0] or self.avocab['are'] == q[0] or \
-                 self.avocab['do'] == q[0] or self.avocab['does'] == q[0] :
-                qtypes.append(self.self.ans_type_dict['yes/no'])
-            else:
-                 qtypes.append(self.self.ans_type_dict['other'])
-        return np.array(qtypes)
     #********* SANITY *********
     
     def sanity_check_train(self):
@@ -395,7 +384,7 @@ class vqa_type:
         l_loss,l_acc = [],[]
         div_id = 2
         for i in range(150):
-                qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='train', a_type=1,train_only_qn=True)
+                qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='train')
                 acc = self.toy_qn_train_util(qn, mask, qtypes, qtrain, qpredict)
                 l.print_overwrite("Acc % :", acc * 100.0)
                 
@@ -438,7 +427,7 @@ class vqa_type:
 
     #************************************************************
 
-    def get_data(self, division_num ,mode,a_type,train_only_qn=False):
+    def get_data(self, division_num ,mode,a_type=None):
         qn, mask    = self.get_question_data(division_num, mode)    
         ans         = self.get_answer_data(division_num, mode)
         iX          = self.get_image_features(division_num, mode)
@@ -452,7 +441,7 @@ class vqa_type:
         print "ans          : ",ans.shape
         """
         sparse_ids = None 
-        if not train_only_qn:
+        if a_type is not None:
             yn_ids = [ itr for itr,a in enumerate(ans) if a in self.ans_per_type[a_type]]
             ans = [ self.ans_per_type[a_type].index(a) for a in ans if a in self.ans_per_type[a_type]]
             qn, mask, iX = qn[yn_ids], mask[yn_ids], iX[yn_ids] 
@@ -493,7 +482,7 @@ class vqa_type:
     def get_image_features(self, division_id, mode):
         f2l = str(mode) + '_feature' + str(division_id+1) + ".npy"
         f2l = os.path.join(self.config["vqa_model_folder"], f2l)
-        return np.load(f2l)
+        return (np.load(f2l)).astype(np.float32)
 
     def store_question_data(self, mode, load_from_file, save_image_features=False):
         if load_from_file:
