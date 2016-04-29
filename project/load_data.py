@@ -401,5 +401,49 @@ def vqa_api(qfolder,afolder,mode='train'):
     qfile = os.path.join(qfolder, [i for i in qfiles if str(i).find(mode) != -1 ][0])
     afile = os.path.join(afolder, [i for i in afiles if str(i).find(mode) != -1 ][0])
     vqa = VQA(afile,qfile)
+
+def get_image_file_id(image_id,image_db=None):
+    for file_id, ilist in enumerate(image_db):
+        try:
+            loc = ilist.index(image_id)
+            return file_id+1, loc
+        except ValueError:
+            continue
+    return 1,0
+
+def get_image_data(config,image_ids, mode):
+    """
+    Output a array of image_features correspodining to the image_ids
+    """
+    feature_file_template = str(mode) +"_feature"
+    image_db = np.load(os.path.join( config['cleaned_images_folder'],str(mode) +"_image.npy"))
+    print image_db.shape
+    im_features = []
+    for itr,im_id in enumerate(image_ids):
+        file_id, im_loc = get_image_file_id(im_id,image_db)
+        feature_file = feature_file_template + "_" + str(file_id) + ".npy"
+        feature = np.load(os.path.join(config['vgg_features_folder'], feature_file))
+        im_features.append(feature[im_loc])
+        l.print_overwrite("Image data percentage % ", 100*itr/len(image_ids))
+    im_features = np.asarray(im_features)
+    print "\nfeature shape", im_features.shape
+    return im_features
+
+def get_file(folder, mode):
+    ofiles = os.listdir(folder)
+    ofile = os.path.join(folder, [i for i in ofiles if str(i).find(mode) != -1 ][0])
+    return ofile
+
+def save_image_data(config, image_ids, num_files, mode):
+    mbsize = len(image_ids) // num_files
+    i = 0
+    for s,e in zip(range(0, len(image_ids), mbsize), range(mbsize, len(image_ids), mbsize)):
+        i += 1
+        print "Saving images from %d to %d" %(s,e)
+        f2s = os.path.join(config["vqa_model_folder"], str(mode) + '_feature' + str(i))
+        np.save(f2s,get_image_data(config,image_ids[s:e],mode))
+        print "Saving features to %s ..."%str(f2s)
+
+
     
     
