@@ -76,6 +76,7 @@ class vqa_type:
         print "Init time taken(in mins)", self.timer.print_checkpoint('init')
         self.model = MODEL( config = config,
                             qvocab_len=len(self.qvocab),
+                            max_qlen=self.max_qlen,
                             num_ans=len(self.avocab),
                             num_qtypes=len(self.ans_type_dict),
                             l_saver=[self.saver, self.exp_saver] )
@@ -91,31 +92,30 @@ class vqa_type:
         for epoch in range(3):
             print '\nEpoch :', epoch 
             l_loss,l_t_acc,l_v_acc = [],[],[]
-            for div_id in np.shuffle(np.arange(num_training_divisions)):
+            for div_id in np.arange(num_training_divisions):
                 qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='train')
                 qloss = qtrain(qn, mask, qtypes)
-                acc = qpredict(qn,mask)
-                #acc = np.mean(pred_qtypes == qtypes)
+                qtypes, acc = qpredict(qn,mask,qtypes)
                 l_t_acc.append(acc*100.0)
             for div_id in range(num_val_divisions):
                 qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='val')
-                acc = qpredict(qn,mask)
+                qtypes, acc = qpredict(qn,mask,qtypes)
                 l_v_acc.append(100.0*acc)
             l_t_acc, l_v_acc = np.mean(np.array(l_t_acc)), np.mean(np.array(l_v_acc))
             print "train acc %", l_t_acc
             print "val acc %", l_v_acc
         print "Done training Question classifier\n"
-        return qembd_fn
+        return qpredict, qembd_fn
 
     def train(self):
-        #qembd_fn = self.train_qn_classifier()
-        atrain, apredict = self.model.build_vqa_model_vanilla()
+        qtype_predict, qembd_fn = self.train_qn_classifier()
+        atrain, apredict = self.model.build_vqa_model_sparse_ids()
         self.timer.set_checkpoint('param_save')
-        
+        epoch, no_improv, patience, best_val_acc = 0,0,10,0
         print "Training VQA"
         l_loss,l_t_acc,l_v_acc = [],[],[]
-        for epoch in range(self.config['epochs']):
-            train_accuracy,total = 0,0
+        while no_improv <= patience:
+            epoch += 1
             self.timer.set_checkpoint('train') 
             if self.timer.expired('param_save', self.config['checkpoint_interval']):
                 self.dump_current_params()
@@ -126,37 +126,46 @@ class vqa_type:
             print"Epoch                 : ",epoch
             print"cross_entropy         : %f, time taken (mins) : %f"%(loss,self.timer.print_checkpoint('train'))
             self.timer.set_checkpoint('val')
-            val_acc = self.acc_util('val',apredict)
-            train_acc =  self.acc_util('train',apredict)
+            val_acc = self.acc_util_sparse_ids('val',apredict, qtype_predict)
+            train_acc =  self.acc_util_sparse_ids('train',apredict, qtype_predict)
+            if val_acc >= best_val_acc:
+                best_val_acc = val_acc
+                best_epoch = epoch
+                no_improv = 0
+            else:
+                no_improv += 1
             print"Training accuracy     : %f, time taken (mins) : %f"%(train_acc ,self.timer.print_checkpoint('val') )   
             print"Val accuracy          : %f, time taken (mins) : %f\n"%(val_acc   ,self.timer.print_checkpoint('val') )
-
+            
     def train_util(self, train):
-        loss,l_div_ids,l_atypes = [],range(self.num_division),range(len(self.ans_type_dict))
-        np.random.shuffle(l_div_ids)
-        np.random.shuffle(l_atypes)
-        for div_id in l_div_ids:
-            for a_type in l_atypes:
-                qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='train', a_type=a_type)
+        loss,l_div_ids_atypes = [],np.arange(self.num_division*len(self.ans_type_dict))
+        np.random.shuffle(l_div_ids_atypes)
+        for itr in l_div_ids_atypes:
+            div_id,a_type = divmod(itr, len(self.ans_type_dict))
+            qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='train', a_type=a_type)
             #qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='train')
-                loss.append(train(qn, mask, iX, ans))
+            loss.append(train(qn, mask, iX, ans, sparse_ids))
         return np.mean(np.array(loss))
     
-    def acc_util(self,mode,apredict):
-        acc, l_div_ids = [], range(self.num_division)
+    def acc_util(self,mode,apredict, qtype_predict):
+        acc, l_div_ids = [], np.arange(self.num_division)
         np.random.shuffle(l_div_ids)
         for division_id in l_div_ids:
             qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(division_id, mode=mode)
             acc.append(apredict(qn, mask, iX, ans)*100.0)
-        """
-        for itr,qtype in enumerate(pred_qtypes):
-            temp_pred = apredict(qembd[itr:itr+1], iX[itr:itr+1], self.ans_per_type[qtype])
-            #temp_pred = apredict(qn[itr:itr+1], mask[itr:itr+1], iX[itr:itr+1], self.ans_per_type[qtype])
-            #pred.append(self.ans_per_type[qtype][temp_pred])
-            pred.append(
-        pred = np.array(pred)
-        """
         return np.mean(np.array(acc))
+
+    def acc_util_sparse_ids(self,mode,apredict, qtype_predict):
+        acc = []
+        division_id = np.random.randint(49)
+        for a_type in range(len(self.ans_type_dict)):
+            qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(division_id, mode=mode,a_type=a_type)
+            pred_qtypes,mode_acc = qtype_predict(qn,mask,qtypes)
+            for itr,qtype in enumerate(pred_qtypes):
+                temp_acc = apredict(qn[itr:itr+1], mask[itr:itr+1], iX[itr:itr+1], ans[itr:itr+1], self.ans_per_type[qtype])
+                acc.append(temp_acc)
+        
+        return np.mean(np.array(acc))*100
 
     #************************************************************
 
@@ -179,8 +188,9 @@ class vqa_type:
         if a_type is not None:
             yn_ids = [ itr for itr,a in enumerate(ans) if a in self.ans_per_type[a_type]]
             ans = [ self.ans_per_type[a_type].index(a) for a in ans if a in self.ans_per_type[a_type]]
+            #ans = ans[yn_ids]
             qn, mask, iX = qn[yn_ids], mask[yn_ids], iX[yn_ids] 
-            qtypes, sparse_ids = np.ones(len(yn_ids))*int(a_type), np.array(self.ans_per_type[a_type])
+            qtypes, sparse_ids = np.ones(len(yn_ids))*int(a_type), np.array(self.ans_per_type[a_type], dtype=np.float32)
         
         if 'yes' in self.config['experiment_id'].lower():
             yn_ids = [ itr for itr,i in enumerate(ans) if self.aword[i] != 'yes' and self.aword[i] != 'no']

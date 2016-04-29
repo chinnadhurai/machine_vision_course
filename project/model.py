@@ -33,6 +33,7 @@ class MODEL:
     def __init__( self,
                   config,
                   qvocab_len,
+                  max_qlen,
                   num_ans,
                   num_qtypes,  
                   l_saver):
@@ -49,7 +50,7 @@ class MODEL:
         self.saver, self.exp_saver      = l_saver
         self.qlstm_hidden_dim           = 300 
         self.qn_classifier_emb_size     = 75
-        self.max_ql                     = 24
+        self.max_ql                     = max_qlen
         self.qvocab_len                 = qvocab_len 
         self.bptt_trunk_steps           = -1 
         self.mlp_input_dim              = 1024
@@ -124,7 +125,7 @@ class MODEL:
         return net
     
     def qn_classifier_lstm(self, l_input_var, param_type=None):
-        input_dim, seq_len = self.qvocab_len, self.max_qlen
+        input_dim, seq_len = self.qvocab_len, self.max_ql
         # (batch size, max sequence length, number of features)
         input_var,mask = l_input_var
         l_in = lasagne.layers.InputLayer(shape=(None, seq_len),
@@ -265,6 +266,53 @@ class MODEL:
         print "Compile time(mins)", self.timer.print_checkpoint('compile')
         print "Done Compiling final model..."
         return train, ans_predict
+    
+
+    
+
+
+    # sparse_ids
+    def build_vqa_model_sparse_ids(self):
+        qn, mask, Y = self.qn, self.lstm_mask, self.Y
+        sparse_indices, qembd, iX = self.sparse_indices, self.ql_out, self.iX
+        l_param_type = [ 'vgg_feature_mlp', 'qmbd_mlp', 'final_mlp' ]
+
+        vgg_mlp_net = self.vgg_feature_mlp(iX,param_type=l_param_type[0])['l_out']
+        vgg_out = lasagne.layers.get_output(vgg_mlp_net)
+
+        ql_out = self.single_layer_question_lstm([qn, mask], param_type=l_param_type[1])['l_out']
+        ql_out = lasagne.layers.get_output(ql_out)
+
+        mlp_input = ql_out * vgg_out
+        network = self.final_mlp_model(mlp_input, param_type=l_param_type[2])['l_out']
+        prediction = lasagne.layers.get_output(network, deterministic=False, sparse_indices=sparse_indices)
+        prediction = T.nnet.softmax(prediction[:,sparse_indices])
+
+        loss =  lasagne.objectives.categorical_crossentropy(prediction, Y)
+        loss = loss.mean()
+        params = self.get_params(l_param_type)
+        all_grads = T.grad(loss, params)
+        if self.grad_clip != None:
+            all_grads = [T.clip(g, self.grad_clip[0], self.grad_clip[1]) for g in all_grads]
+        updates = lasagne.updates.adam(all_grads, params, learning_rate=0.01)
+
+        test_prediction = lasagne.layers.get_output(network, sparse_indices=sparse_indices, deterministic=True)
+        test_prediction = T.nnet.softmax(test_prediction[:,sparse_indices])
+        test_prediction = T.argmax(test_prediction, axis=1)
+        acc = T.mean(T.eq(test_prediction, Y),dtype=theano.config.floatX)
+        print "Compiling..."
+        self.timer.set_checkpoint('compile')
+        train = theano.function([qn, mask, iX, Y, sparse_indices], [loss], updates=updates, allow_input_downcast=True)
+        ans_predict = theano.function([qn, mask, iX, Y, sparse_indices], acc, allow_input_downcast=True)
+        print "Compile time(mins)", self.timer.print_checkpoint('compile')
+        print "Done Compiling final model..."
+        return train, ans_predict
+
+
+
+
+
+
 
     # Question classifier model
     def build_qn_type_model(self):
@@ -282,19 +330,19 @@ class MODEL:
 
         loss = lasagne.objectives.categorical_crossentropy(q_type_pred, qtype)
         loss = loss.mean() + l2_penalty_mlp + l2_penalty_qlstm
-        params = self.get_params(l_model_param)
+        params = self.get_params(l_param_type)
         all_grads = T.grad(loss, params)
         if self.grad_clip != None:
             all_grads = [T.clip(g, self.grad_clip[0], self.grad_clip[1]) for g in all_grads]
 
         updates = lasagne.updates.adam(all_grads, params, learning_rate=0.003)
-        qtype_test_pred = lasagne.layers.get_output(q_type_net['l_out'],deterministic=True)
+        qtype_test_pred = lasagne.layers.get_output(q_type_net,deterministic=True)
         qtype_test_pred = T.argmax(qtype_test_pred, axis=1)
         acc = T.mean(T.eq(qtype_test_pred, qtype),dtype=theano.config.floatX)
         print "Compiling..."
         self.timer.set_checkpoint('compile')
         train = theano.function([qn,mask, qtype], loss, updates=updates, allow_input_downcast=True)
-        qtype_predict = theano.function([qn,mask], acc, allow_input_downcast=True)
+        qtype_predict = theano.function([qn,mask,qtype], [qtype_test_pred, acc], allow_input_downcast=True)
         qembd_fn = theano.function([qn,mask], qembd, allow_input_downcast=True)
         print "Compile time(mins)", self.timer.print_checkpoint('compile')
         print "Done Compiling qtype model..."
