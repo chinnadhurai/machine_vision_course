@@ -29,6 +29,8 @@ import time
 import datetime
 from nltk.tokenize import WordPunctTokenizer
 from model import MODEL
+import skipthoughts
+
 
 class vqa_type:
     def __init__(self, config):
@@ -44,15 +46,17 @@ class vqa_type:
         self.ql_out                     = T.fmatrix()
         self.params                     = []
         self.ans_type_dict              = {'other': 1, 'yes/no': 0, 'number': 2}
+        self.q_type_dict                = {'Multiple-Choice' : 0, 'Open-Ended':1}
         pprint(config)
         print "\n----------------------"
         print "\nPreping data set..."
         self.timer = l.timer_type()
         self.saver = l.save_np_arrays(os.path.join(self.config['questions_folder'], "temp"))
-        self.exp_saver = l.save_np_arrays(os.path.join(self.config['real_abstract_images'], config['experiment_id']))
+        self.exp_saver = l.save_np_arrays(os.path.join(self.config['real_abstract_images'] + "/models", config['experiment_id']))
         default_plot_folder = os.path.join(config['real_abstract_images'], "plots")
         self.plotter = l.plotter_tool(os.path.join(default_plot_folder, config['experiment_id']))
         self.tokenizer = WordPunctTokenizer()
+        
         pfile = os.path.join(self.config['questions_folder'], "qn_vocab.zip")
         self.qvocab, self.qword, self.max_qlen = pickle.load( gzip.open( pfile, "rb" ) )
         pfile = os.path.join(self.config['annotations_folder'], "top1000_ans_vocab.zip")
@@ -61,17 +65,18 @@ class vqa_type:
         print "question vocab size  :", len(self.qvocab)
         pfile = os.path.join(self.config['annotations_folder'], "id_info.zip")
         self.id_info = pickle.load( gzip.open( pfile, "rb" ) )
+        
         self.num_division = config['num_division']
         self.qdict, self.image_ids, self.question_ids, self.answer_types = {},{},{},{}
-        self.answers, self.questions, self.mask, self.divisions, self.saved_params = {},{},{},{},{}
+        self.answers, self.questions, self.mask, self.qn_cat, self.divisions, self.saved_params = {},{},{},{},{},{}
         self.timer.set_checkpoint('init')
         load_from_file= True
         for mode in ['train','val']:
-            self.qdict[mode] = load_data.load_questions(self.config['questions_folder'], mode=mode)
+            self.qdict[mode] = load_data.load_questions(self.config['questions_folder'], mode=mode, cat=config['qn_category'])
             self.image_ids[mode], self.question_ids[mode], self.answer_types[mode], self.answers[mode] = self.get_image_question_ans_ids(mode, load_from_file=load_from_file)
             mbsize = len(self.image_ids[mode]) // self.num_division
             self.divisions[mode] = zip(range(0, len(self.image_ids[mode]), mbsize), range(mbsize, len(self.image_ids[mode]), mbsize))
-            self.store_question_data(mode, load_from_file=load_from_file, save_image_features=False)
+            self.store_st_qn_data(mode, load_from_file=load_from_file, save_image_features=False)
             self.answer_type_util(mode=mode)
         print "Init time taken(in mins)", self.timer.print_checkpoint('init')
         self.model = MODEL( config = config,
@@ -84,12 +89,12 @@ class vqa_type:
         print "Initialization done ..."
         
 
-    def train_qn_classifier(self):
+    def train_qn_classifier(self,epochs):
         print "Training qn classifier"
         qtrain, qpredict, qembd_fn = self.model.build_qn_type_model()
         num_training_divisions  = int(self.num_division *self.config['train_data_percent']/100)
         num_val_divisions       = num_training_divisions
-        for epoch in range(3):
+        for epoch in range(epochs):
             print '\nEpoch :', epoch 
             l_loss,l_t_acc,l_v_acc = [],[],[]
             for div_id in np.arange(num_training_divisions):
@@ -108,8 +113,8 @@ class vqa_type:
         return qpredict, qembd_fn
 
     def train(self):
-        qtype_predict, qembd_fn = self.train_qn_classifier()
-        atrain, apredict = self.model.build_vqa_model_sparse_ids()
+        qtype_predict, qembd_fn = self.train_qn_classifier(epochs=0)
+        atrain, apredict = self.model.build_vqa_model_skip_thought_vanilla()#sparse_ids_only_val()
         self.timer.set_checkpoint('param_save')
         epoch, no_improv, patience, best_val_acc = 0,0,10,0
         print "Training VQA"
@@ -120,14 +125,14 @@ class vqa_type:
             if self.timer.expired('param_save', self.config['checkpoint_interval']):
                 self.dump_current_params()
                 self.timer.set_checkpoint('param_save')
-            loss = self.train_util(atrain)
+            loss = self.train_util_vanilla(atrain,qembd_fn)
             loss = np.mean(np.array(loss))
             l_loss.append(loss)
             print"Epoch                 : ",epoch
             print"cross_entropy         : %f, time taken (mins) : %f"%(loss,self.timer.print_checkpoint('train'))
             self.timer.set_checkpoint('val')
-            val_acc = self.acc_util_sparse_ids('val',apredict, qtype_predict)
-            train_acc =  self.acc_util_sparse_ids('train',apredict, qtype_predict)
+            val_acc = self.acc_util('val',apredict, qtype_predict,qembd_fn)
+            train_acc =  self.acc_util('train',apredict, qtype_predict,qembd_fn)
             if val_acc >= best_val_acc:
                 best_val_acc = val_acc
                 best_epoch = epoch
@@ -137,25 +142,40 @@ class vqa_type:
             print"Training accuracy     : %f, time taken (mins) : %f"%(train_acc ,self.timer.print_checkpoint('val') )   
             print"Val accuracy          : %f, time taken (mins) : %f\n"%(val_acc   ,self.timer.print_checkpoint('val') )
             
-    def train_util(self, train):
+    def train_util(self, train, qembd_fn):
         loss,l_div_ids_atypes = [],np.arange(self.num_division*len(self.ans_type_dict))
         np.random.shuffle(l_div_ids_atypes)
-        for itr in l_div_ids_atypes:
-            div_id,a_type = divmod(itr, len(self.ans_type_dict))
-            qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='train', a_type=a_type)
-            #qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='train')
-            loss.append(train(qn, mask, iX, ans, sparse_ids))
+        for i in range(2000):
+            for itr in l_div_ids_atypes:
+                div_id,a_type = divmod(itr, len(self.ans_type_dict))
+                qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='train', a_type=a_type)
+                #qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='train')
+                try:
+                    loss.append(train(qn[i:i+1], mask[i:i+1], iX[i:i+1], ans[i:i+1], sparse_ids))
+                except IndexError:
+                    print "skipping ",i
+                    continue
+        return np.mean(np.array(loss))
+
+    def train_util_vanilla(self, train, qembd_fn):
+        loss,l_div_ids = [],np.arange(self.num_division)
+        np.random.shuffle(l_div_ids)
+        for div_id in l_div_ids:
+            qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(div_id, mode='train')
+            #qembd = qembd_fn(qn, mask)
+            loss.append(train(qn, iX, ans))
         return np.mean(np.array(loss))
     
-    def acc_util(self,mode,apredict, qtype_predict):
+    def acc_util(self,mode,apredict, qtype_predict, qembd_fn):
         acc, l_div_ids = [], np.arange(self.num_division)
         np.random.shuffle(l_div_ids)
         for division_id in l_div_ids:
             qn, mask, iX, ans, qtypes, sparse_ids = self.get_data(division_id, mode=mode)
-            acc.append(apredict(qn, mask, iX, ans)*100.0)
+            #qembd = qembd_fn(qn, mask)
+            acc.append(apredict(qn, iX, ans)*100.0)
         return np.mean(np.array(acc))
 
-    def acc_util_sparse_ids(self,mode,apredict, qtype_predict):
+    def acc_util_sparse_ids(self,mode,apredict, qtype_predict, qembd_fn):
         acc = []
         division_id = np.random.randint(49)
         for a_type in range(len(self.ans_type_dict)):
@@ -164,8 +184,7 @@ class vqa_type:
             for itr,qtype in enumerate(pred_qtypes):
                 temp_acc = apredict(qn[itr:itr+1], mask[itr:itr+1], iX[itr:itr+1], ans[itr:itr+1], self.ans_per_type[qtype])
                 acc.append(temp_acc)
-        
-        return np.mean(np.array(acc))*100
+        return np.mean(np.array(acc))*100.0
 
     #************************************************************
 
@@ -173,18 +192,12 @@ class vqa_type:
 
     #************************************************************
     def get_data(self, division_num ,mode,a_type=None):
-        qn, mask    = self.get_question_data(division_num, mode)    
-        ans         = self.get_answer_data(division_num, mode)
-        iX          = self.get_image_features(division_num, mode)
-        qtypes      = self.get_answer_types(division_num, mode)
-        """
-        print "Training data shapes ..."
-        print "Question     : ",qn.shape
-        print "mask         : ",mask.shape
-        print "image feature: ",iX.shape
-        print "ans          : ",ans.shape
-        """
-        sparse_ids = None 
+        qn                  = self.get_question_data(division_num, mode)    
+        ans                 = self.get_answer_data(division_num, mode)
+        iX                  = self.get_image_features(division_num, mode)
+        qtypes              = self.get_answer_types(division_num, mode)
+        mask, sparse_ids = None, None
+        
         if a_type is not None:
             yn_ids = [ itr for itr,a in enumerate(ans) if a in self.ans_per_type[a_type]]
             ans = [ self.ans_per_type[a_type].index(a) for a in ans if a in self.ans_per_type[a_type]]
@@ -192,18 +205,6 @@ class vqa_type:
             qn, mask, iX = qn[yn_ids], mask[yn_ids], iX[yn_ids] 
             qtypes, sparse_ids = np.ones(len(yn_ids))*int(a_type), np.array(self.ans_per_type[a_type], dtype=np.float32)
         
-        if 'yes' in self.config['experiment_id'].lower():
-            yn_ids = [ itr for itr,i in enumerate(ans) if self.aword[i] != 'yes' and self.aword[i] != 'no']
-            qn, mask, iX, ans = qn[yn_ids], mask[yn_ids], iX[yn_ids], ans[yn_ids]
-        
-        if 'norm' in self.config['experiment_id'].lower():
-            print "normlized input"
-            norms = 1.0/np.linalg.norm(iX,axis=1)
-            print norms.shape, norms[:10]
-            print iX.shape, iX[0,:10]
-            iX = np.dot(np.diag(norms), iX)
-            print iX.shape, iX[0,:10]
-            
         return qn, mask, iX, ans, qtypes, sparse_ids
 
     def answer_type_util(self,mode):
@@ -236,8 +237,9 @@ class vqa_type:
         return self.answer_types[mode][s:e]
  
     def get_question_data(self, division_id, mode):
-        return self.questions[mode][division_id] \
-             , self.mask[mode][division_id]
+        return self.get_st_qn_data(mode,division_id)
+        #return self.questions[mode][division_id] 
+             #, self.mask[mode][division_id]
 
     def get_answer_data(self, division_id, mode):
         s,e = self.divisions[mode][division_id]
@@ -250,30 +252,53 @@ class vqa_type:
 
     def store_question_data(self, mode, load_from_file, save_image_features=False):
         if load_from_file:
-            self.questions[mode], self.mask[mode] = self.saver.load_array(fid=str(mode)+'qn_mask')
+            self.questions[mode], self.mask[mode],  self.qn_cat[mode] = self.saver.load_array(fid=str(mode)+'qn_mask')
             return
         qdict = self.qdict[mode]
         question_ids = self.question_ids[mode]
         divisions = self.divisions[mode]
         qn_output = []
         mask_output = []
+        qn_cat_output = []
         for s,e in divisions:
             q_a = np.ones((len(question_ids[s:e]), self.max_qlen), dtype='uint32')*-1
             mask = np.zeros((len(question_ids[s:e]), self.max_qlen), dtype='uint32')
+            q_cat = np.ones((len(question_ids[s:e])), dtype='uint32')*-1
             for itr,q_id in enumerate(question_ids[s:e]):
                 q = qdict[q_id]['question']
+                q_cat[itr] = self.q_type_dict[qdict[q_id]['type']]
                 l_a = [ self.qvocab[w.lower()] for w in self.tokenizer.tokenize(str(q)) if w.lower() in self.qvocab.keys() ]
                 q_a[itr,:len(l_a)] = np.array(l_a[:self.max_qlen], dtype='uint32')
                 mask[itr,:len(l_a)] = 1
             qn_output.append(q_a)
             mask_output.append(mask)
+            qn_cat_output.append(q_cat)
         self.questions[mode]    = np.asarray(qn_output)
         self.mask[mode]         = np.asarray(mask_output)
+        self.qn_cat[mode]       = np.asarray(qn_cat_output)
         print "questions shape      :", self.questions[mode].shape
         print "mask shape           :", self.mask[mode].shape
-        self.saver.save_array([ self.questions[mode], self.mask[mode] ], fid=str(mode)+'qn_mask')
+        print "qcat shape           :", self.qn_cat[mode].shape
+        self.saver.save_array([ self.questions[mode], self.mask[mode], self.qn_cat[mode]], fid=str(mode)+'qn_mask')
         if save_image_features:
             load_data.save_image_data(self.config, self.image_ids[mode], self.num_division ,mode)
+
+    def store_st_qn_data(self, mode, load_from_file, save_image_features=False):
+        if load_from_file:
+            return
+        model = skipthoughts.load_model()
+        l_qembd,divisions,question_ids = [], self.divisions[mode], self.question_ids[mode]
+        div_id = 0
+        for s,e in divisions[:2]:
+            l_q = [ self.qdict[mode][q_id]['question'] for q_id in question_ids[s:e] ]
+            qembd = skipthoughts.encode(model, l_q, verbose=False)[:,:2400]
+            self.saver.save_array([qembd], fid=str(mode)+str(div_id)+'skip_thought_qembd')
+            div_id += 1    
+        if save_image_features:
+            load_data.save_image_data(self.config, self.image_ids[mode], self.num_division ,mode)
+    
+    def get_st_qn_data(self, mode, div_id):
+        return self.saver.load_array(fid=str(mode)+str(div_id)+'skip_thought_qembd')[0]
 
     def get_image_question_ans_ids(self,mode,load_from_file):
         if load_from_file:
@@ -290,13 +315,13 @@ class vqa_type:
                 self.ans_type_dict[a['ans_type']] = ans_types
                 ans_types += 1
             answer_types.append(self.ans_type_dict[a['ans_type']])
-        pprint( self.ans_type_dict)
         assert len(image_ids) == len(question_ids)
         assert len(image_ids) == len(answers)
-
         self.saver.save_array([image_ids, question_ids, answer_types, answers], fid=str(mode)+"ids")
         return np.array(image_ids), np.array(question_ids), np.array(answer_types), np.array(answers)
     
+    
+
     def plot_results(self):
         l_loss,l_t_acc, l_v_acc = self.exp_saver.load_array(fid='loss_t_v_acc')
         self.plot_loss(l_loss)

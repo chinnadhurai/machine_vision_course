@@ -176,13 +176,14 @@ class save_np_arrays:
    
     def save_array(self,files,fid):
         fid = str(fid)
+        print "Saving %s data "%(fid)
         file_loc  = os.path.join(self.folder,fid)
         if not os.path.exists( file_loc ):
             os.makedirs(file_loc)
         for itr,f in enumerate(files):
             f2s = os.path.join(file_loc, self.default_string + str(itr))
             np.save(f2s,f)
-            print "Saving file ",str(itr)
+            #print "Saving file ",str(itr)
     
     def load_array(self,fid):
         output = []

@@ -22,6 +22,8 @@ import nltk
 from nltk.tokenize import WordPunctTokenizer
 from vqa import VQA
 import gzip
+import skipthoughts
+
 
 def one_hot(x,n):
     if type(x) == list:
@@ -298,7 +300,6 @@ def get_answer_vocab(k, folder):
             top_k_word[wc] = w
             wc+=1
     print [(k,v) for k,v in sorted(hist.items(),reverse=True,key=lambda (k,v): (v,k))[:1000]][-1]
-    exit(0)
     print len(top_k_vocab)
     print top_k_vocab['yes'], top_k_vocab['no']
     print hist['yes'], hist['no']
@@ -307,23 +308,23 @@ def get_answer_vocab(k, folder):
     pickle.dump([top_k_vocab, top_k_word], gzip.open( f2p, "wb" ) )
     mode_id_info = {}
     for mode in ['train','val']:
-        id_info = { 'top_k_ids':[],'ans_no_ids':[] }   
+        id_info = { 'top_k_ids':[]}  
+        top_k_count , total_count = 0,0
         for q in dataset[mode]['annotations']:
             qa = tokenizer.tokenize(str(q['multiple_choice_answer']))
+            total_count += 1
             if len(qa) !=1:
                 continue 
             qa = qa[0].lower()
             local_dict = {}
             if qa in top_k_vocab.keys():
+                top_k_count+=1
                 local_dict['qn_id'] = q['question_id']
                 local_dict['im_id'] = q['image_id']
-                local_dict['type_yes_no'] = (qa == 'yes' or qa == 'no')
                 local_dict['ans_id'] = top_k_vocab[qa]
                 local_dict['ans'] = qa 
                 local_dict['ans_type'] = q['answer_type']
                 id_info['top_k_ids'].append(local_dict)
-                if local_dict['type_yes_no']:
-                    id_info['ans_no_ids'].append(local_dict)      
         mode_id_info[mode] = id_info
     f2p = os.path.join(folder,"id_info.zip")
     print "Dumping pickle file to ", f2p
@@ -368,13 +369,14 @@ def load_annotations(folder, mode='val'):
     print "Number of questions: ", len(a_dict)
     return a_dict
 
-def load_questions(folder, mode='val'):
+def load_questions(folder, mode='val', cat='open'):
     qfiles = listdir(folder)
     qdict = {}
-    qfiles = [i for i in qfiles if str(i).find(mode) != -1 and i.endswith('.json')]
+    qfiles = [i for i in qfiles if str(i).lower().find(mode) != -1 and \
+              str(i).lower().find(cat) != -1 and i.endswith('.json')]
     for i in qfiles:
+        print i
         qfile = os.path.join(folder,i)
-        #print "Getting questions from ", qfile
         data = json.load(open(qfile, 'r'))
         for q in data['questions']:
             localdict = {}
@@ -383,16 +385,6 @@ def load_questions(folder, mode='val'):
             localdict['question'] = q['question']
             qdict[q['question_id']] = localdict
     return qdict
-    """
-    for k,v in data.items():
-        print k,"\n... "
-        if type(v) == dict:
-            print "dict", len(v), v.keys()
-        if type(v) == list:
-            print "list", len(v), v[0]
-        else:
-            print v
-    """
 
 def vqa_api(qfolder,afolder,mode='train'):
     print "test"
@@ -444,6 +436,6 @@ def save_image_data(config, image_ids, num_files, mode):
         np.save(f2s,get_image_data(config,image_ids[s:e],mode))
         print "Saving features to %s ..."%str(f2s)
 
-
+    
     
     

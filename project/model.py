@@ -123,7 +123,69 @@ class MODEL:
             self.add_params(l_dense, param_type)
         print "Done building single_layer_question_lstm..."
         return net
-    
+ 
+    def double_layer_question_lstm(self, l_input_var, param_type=None):
+        input_dim, seq_len = self.qvocab_len, self.max_ql
+        input_var, mask = l_input_var
+        # (batch size, max sequence length, number of features)
+
+        l_in = lasagne.layers.InputLayer(shape=(None, seq_len),
+                                            input_var=input_var)
+        lstm_params = lasagne.layers.get_all_params(l_in)
+        l_embd = lasagne.layers.EmbeddingLayer(l_in, input_dim, self.qlstm_hidden_dim)
+        l_mask = lasagne.layers.InputLayer(shape=(None, seq_len), input_var=mask)
+        l_lstm1 = lasagne.layers.LSTMLayer(l_embd,
+                                          num_units             = self.qlstm_hidden_dim,
+                                          gradient_steps        = self.bptt_trunk_steps,
+                                          mask_input            = l_mask
+                                         )
+        l_lstm2 = lasagne.layers.LSTMLayer(l_lstm1,
+                                          num_units             = self.qlstm_hidden_dim,
+                                          only_return_final     = True,
+                                          gradient_steps        = self.bptt_trunk_steps,
+                                          mask_input            = l_mask
+                                         )
+        l_dense = lasagne.layers.DenseLayer(l_lstm2, num_units=self.mlp_input_dim)
+        net  = {'l_in':l_in, 'l_lstm2':l_lstm2, 'l_out':l_dense}
+        if param_type is not None:
+            self.add_params(l_dense, param_type)
+        print "Done building double_layer_question_lstm..."
+        return net
+   
+    def bidirectional_question_lstm(self, l_input_var, param_type=None):
+        input_dim, seq_len = self.qvocab_len, self.max_ql
+        input_var, mask = l_input_var
+        # (batch size, max sequence length, number of features)
+
+        l_in = lasagne.layers.InputLayer(shape=(None, seq_len),
+                                            input_var=input_var)
+        lstm_params = lasagne.layers.get_all_params(l_in)
+        l_embd = lasagne.layers.EmbeddingLayer(l_in, input_dim, self.qlstm_hidden_dim)
+        l_mask = lasagne.layers.InputLayer(shape=(None, seq_len), input_var=mask)
+        l_lstmf = lasagne.layers.LSTMLayer(l_embd,
+                                          num_units             = self.qlstm_hidden_dim,
+                                          gradient_steps        = self.bptt_trunk_steps,
+                                          mask_input            = l_mask,
+                                          only_return_final     = True
+                                          )
+        l_lstmb = lasagne.layers.LSTMLayer(l_embd,
+                                          num_units             = self.qlstm_hidden_dim,
+                                          only_return_final     = True,
+                                          gradient_steps        = self.bptt_trunk_steps,
+                                          mask_input            = l_mask,
+                                          backwards             = True
+                                          )
+        l_concat = lasagne.layers.ConcatLayer([l_lstmf, l_lstmb])
+        l_dense = lasagne.layers.DenseLayer(l_concat, num_units=self.mlp_input_dim-self.qn_classifier_emb_size)
+        net  = {'l_in':l_in, 'l_lstm2':l_lstmb, 'l_out':l_dense}
+        if param_type is not None:
+            self.add_params(l_dense, param_type)
+        print "Done building bidirectional_question_lstm..."
+        return net
+
+
+
+
     def qn_classifier_lstm(self, l_input_var, param_type=None):
         input_dim, seq_len = self.qvocab_len, self.max_ql
         # (batch size, max sequence length, number of features)
@@ -225,6 +287,34 @@ class MODEL:
         return net
 
 
+    def st_qmbd_mlp_model(self,input_var, param_type=None):
+        net = {}
+        net['l_in'] = lasagne.layers.InputLayer(shape=(None,2400),
+                                         input_var=input_var)
+
+        net['l_h1'] =  lasagne.layers.DenseLayer( net['l_in'],
+                                                  num_units=2000,
+                                                  nonlinearity=lasagne.nonlinearities.rectify)
+
+        net['l_h1_drop'] = lasagne.layers.DropoutLayer(net['l_h1'], p=0.5)
+
+        net['l_h2'] =  lasagne.layers.DenseLayer( net['l_h1_drop'],
+                                                  num_units=2000,
+                                                  nonlinearity=lasagne.nonlinearities.rectify)
+
+        net['l_h2_drop'] = lasagne.layers.DropoutLayer(net['l_h2'], p=0.5)
+
+
+        net['l_out'] = lasagne.layers.DenseLayer(
+                net['l_h2_drop'],
+                num_units=self.mlp_input_dim)
+                #nonlinearity=lasagne.nonlinearities.softmax)
+        if param_type is not None:
+            self.add_params(net['l_out'], param_type)
+        print "Done building skip_thought to question embd mlp ..."
+        return net
+
+
     #---------------------------------------------------
     #
     #  COMPOSED MODELS
@@ -236,12 +326,12 @@ class MODEL:
     def build_vqa_model_vanilla(self):
         qn, mask, Y = self.qn, self.lstm_mask, self.Y
         sparse_indices, qembd, iX = self.sparse_indices, self.ql_out, self.iX
-        l_param_type = [ 'vgg_feature_mlp', 'qmbd_mlp', 'final_mlp' ]
+        l_param_type = [ 'vgg_feature_mlp', 'qlstm', 'final_mlp' ]
 
         vgg_mlp_net = self.vgg_feature_mlp(iX,param_type=l_param_type[0])['l_out']
         vgg_out = lasagne.layers.get_output(vgg_mlp_net)
 
-        ql_out = self.single_layer_question_lstm([qn, mask], param_type=l_param_type[1])['l_out']
+        ql_out = self.double_layer_question_lstm([qn, mask], param_type=l_param_type[1])['l_out']
         ql_out = lasagne.layers.get_output(ql_out)
 
         mlp_input = ql_out * vgg_out
@@ -275,12 +365,12 @@ class MODEL:
     def build_vqa_model_sparse_ids(self):
         qn, mask, Y = self.qn, self.lstm_mask, self.Y
         sparse_indices, qembd, iX = self.sparse_indices, self.ql_out, self.iX
-        l_param_type = [ 'vgg_feature_mlp', 'qmbd_mlp', 'final_mlp' ]
+        l_param_type = [ 'sparse_vgg_feature_mlp', 'sparse_lstm', 'sparse_final_mlp' ]
 
         vgg_mlp_net = self.vgg_feature_mlp(iX,param_type=l_param_type[0])['l_out']
         vgg_out = lasagne.layers.get_output(vgg_mlp_net)
 
-        ql_out = self.single_layer_question_lstm([qn, mask], param_type=l_param_type[1])['l_out']
+        ql_out = self.double_layer_question_lstm([qn, mask], param_type=l_param_type[1])['l_out']
         ql_out = lasagne.layers.get_output(ql_out)
 
         mlp_input = ql_out * vgg_out
@@ -306,6 +396,119 @@ class MODEL:
         ans_predict = theano.function([qn, mask, iX, Y, sparse_indices], acc, allow_input_downcast=True)
         print "Compile time(mins)", self.timer.print_checkpoint('compile')
         print "Done Compiling final model..."
+        return train, ans_predict
+
+
+
+
+
+
+    # sparse_ids
+    def build_vqa_model_sparse_ids_only_val(self):
+        qn, mask, Y = self.qn, self.lstm_mask, self.Y
+        sparse_indices, qembd, iX = self.sparse_indices, self.ql_out, self.iX
+        l_param_type = [ 'sparse_vgg_feature_mlp', 'sparse_lstm', 'sparse_final_mlp' ]
+
+        iX = iX / T.sqrt(iX).sum(axis=1).reshape((iX.shape[0], 1))
+        vgg_mlp_net = self.vgg_feature_mlp(iX,param_type=l_param_type[0])['l_out']
+        vgg_out = lasagne.layers.get_output(vgg_mlp_net)
+
+        ql_out = self.single_layer_question_lstm([qn, mask], param_type=l_param_type[1])['l_out']
+        ql_out = lasagne.layers.get_output(ql_out)
+
+        mlp_input = ql_out * vgg_out
+        network = self.final_mlp_model(mlp_input, param_type=l_param_type[2])['l_out']
+        prediction = lasagne.layers.get_output(network, deterministic=False)
+
+        loss =  lasagne.objectives.categorical_crossentropy(prediction, Y)
+        loss = loss.mean()
+        params = self.get_params(l_param_type)
+        all_grads = T.grad(loss, params)
+        if self.grad_clip != None:
+            all_grads = [T.clip(g, self.grad_clip[0], self.grad_clip[1]) for g in all_grads]
+        updates = lasagne.updates.adam(all_grads, params, learning_rate=0.01)
+
+        test_prediction = lasagne.layers.get_output(network, sparse_indices=sparse_indices, deterministic=True)
+        test_prediction = T.nnet.softmax(test_prediction[:,sparse_indices])
+        test_prediction = T.argmax(test_prediction, axis=1)
+        acc = T.mean(T.eq(test_prediction, Y),dtype=theano.config.floatX)
+        print "Compiling..."
+        self.timer.set_checkpoint('compile')
+        train = theano.function([qn, mask, iX, Y], [loss], updates=updates, allow_input_downcast=True)
+        ans_predict = theano.function([qn, mask, iX, Y, sparse_indices], acc, allow_input_downcast=True)
+        print "Compile time(mins)", self.timer.print_checkpoint('compile')
+        print "Done Compiling final model..."
+        return train, ans_predict
+
+
+
+    # sparse_ids
+    def build_vqa_model_concat_class_embd(self):
+        qn, mask, Y = self.qn, self.lstm_mask, self.Y
+        sparse_indices, qembd, iX = self.sparse_indices, self.ql_out, self.iX
+        l_param_type = [ 'sparse_vgg_feature_mlp', 'bi_dir_lstm', 'sparse_final_mlp' ]
+
+        iX = iX / T.sqrt(iX).sum(axis=1).reshape((iX.shape[0], 1))
+        vgg_mlp_net = self.vgg_feature_mlp(iX,param_type=l_param_type[0])['l_out']
+        vgg_out = lasagne.layers.get_output(vgg_mlp_net)
+
+        ql_out = self.bidirectional_question_lstm([qn, mask], param_type=l_param_type[1])['l_out']
+        ql_out = lasagne.layers.get_output(ql_out)
+        ql_out = T.concatenate([ql_out, qembd],axis=1)
+        mlp_input = ql_out * vgg_out
+        network = self.final_mlp_model(mlp_input, param_type=l_param_type[2])['l_out']
+        prediction = lasagne.layers.get_output(network, deterministic=False)
+
+        loss =  lasagne.objectives.categorical_crossentropy(prediction, Y)
+        loss = loss.mean()
+        params = self.get_params(l_param_type)
+        all_grads = T.grad(loss, params)
+        if self.grad_clip != None:
+            all_grads = [T.clip(g, self.grad_clip[0], self.grad_clip[1]) for g in all_grads]
+        updates = lasagne.updates.adam(all_grads, params, learning_rate=0.01)
+
+        test_prediction = lasagne.layers.get_output(network, deterministic=True)
+        test_prediction = T.argmax(test_prediction, axis=1)
+        acc = T.mean(T.eq(test_prediction, Y),dtype=theano.config.floatX)
+        print "Compiling..."
+        self.timer.set_checkpoint('compile')
+        train = theano.function([qn, mask, iX, Y, qembd], [loss], updates=updates, allow_input_downcast=True)
+        ans_predict = theano.function([qn, mask, iX, Y, qembd], acc, allow_input_downcast=True)
+        print "Compile time(mins)", self.timer.print_checkpoint('compile')
+        print "Done Compiling final model..."
+        return train, ans_predict
+
+
+    def build_vqa_model_skip_thought_vanilla(self):
+        qembd, iX, Y = self.ql_out, self.iX, self.Y
+        l_param_type = [ 'vgg_feature_mlp', 'skip_thought_mlp', 'final_mlp' ]
+        
+        vgg_mlp_net = self.vgg_feature_mlp(iX,param_type=l_param_type[0])['l_out']
+        vgg_out = lasagne.layers.get_output(vgg_mlp_net)
+
+        ql_out = self.st_qmbd_mlp_model(qembd,param_type=l_param_type[1] )['l_out']
+        ql_out = lasagne.layers.get_output(ql_out)
+        mlp_input = ql_out * vgg_out
+        network = self.final_mlp_model(mlp_input, param_type=l_param_type[2])['l_out']
+        prediction = lasagne.layers.get_output(network, deterministic=False)
+
+        loss =  lasagne.objectives.categorical_crossentropy(prediction, Y)
+        loss = loss.mean()
+        params = self.get_params(l_param_type)
+        all_grads = T.grad(loss, params)
+        if self.grad_clip != None:
+            all_grads = [T.clip(g, self.grad_clip[0], self.grad_clip[1]) for g in all_grads]
+        updates = lasagne.updates.adam(all_grads, params, learning_rate=0.01)
+
+        test_prediction = lasagne.layers.get_output(network, deterministic=True)#sparse_indices=sparse_indices, deterministic=True)
+        test_prediction = T.argmax(test_prediction, axis=1)
+        acc = T.mean(T.eq(test_prediction, Y),dtype=theano.config.floatX)
+        print "Compiling..."
+        self.timer.set_checkpoint('compile')
+        train = theano.function([qembd, iX, Y], [loss], updates=updates, allow_input_downcast=True)
+        ans_predict = theano.function([qembd, iX, Y], acc, allow_input_downcast=True)
+        print "Compile time(mins)", self.timer.print_checkpoint('compile')
+        print "Done Compiling vqa_model_skip_thought_vanilla model..."
         return train, ans_predict
 
 
