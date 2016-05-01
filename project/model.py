@@ -264,7 +264,7 @@ class MODEL:
 
     def final_mlp_model(self,input_var,param_type=None):
         net = {}
-        net['l_in'] = lasagne.layers.InputLayer(shape=(None,self.mlp_input_dim),
+        net['l_in'] = lasagne.layers.InputLayer(shape=(None,2*self.mlp_input_dim),
                                          input_var=input_var)
 
         net['l_h1'] =  lasagne.layers.DenseLayer( net['l_in'],
@@ -296,17 +296,11 @@ class MODEL:
                                                   num_units=2000,
                                                   nonlinearity=lasagne.nonlinearities.rectify)
 
-        net['l_h1_drop'] = lasagne.layers.DropoutLayer(net['l_h1'], p=0.5)
-
-        net['l_h2'] =  lasagne.layers.DenseLayer( net['l_h1_drop'],
-                                                  num_units=2000,
-                                                  nonlinearity=lasagne.nonlinearities.rectify)
-
-        net['l_h2_drop'] = lasagne.layers.DropoutLayer(net['l_h2'], p=0.5)
+        #net['l_h1_drop'] = lasagne.layers.DropoutLayer(net['l_h1'], p=0.5)
 
 
         net['l_out'] = lasagne.layers.DenseLayer(
-                net['l_h2_drop'],
+                net['l_h1'],
                 num_units=self.mlp_input_dim)
                 #nonlinearity=lasagne.nonlinearities.softmax)
         if param_type is not None:
@@ -314,6 +308,44 @@ class MODEL:
         print "Done building skip_thought to question embd mlp ..."
         return net
 
+    def conv_final_mlp_model(self,input_var,param_type=None):
+        net = {}
+        net['l_in'] = lasagne.layers.InputLayer(shape=(None,1,2*self.mlp_input_dim),
+                                         input_var=input_var)
+        
+        net['l_conv'] = lasagne.layers.Conv1DLayer( net['l_in'], 
+                                                    pad='same',
+                                                    num_filters=10, 
+                                                    filter_size=50 )
+    
+        net['l_conv'] = lasagne.layers.Conv1DLayer( net['l_conv'],
+                                                    num_filters=5, 
+                                                    filter_size=30 )
+        
+        net['l_conv'] = lasagne.layers.MaxPool1DLayer(net['l_conv'], pool_size=2)
+        
+        net['l_h1'] =  lasagne.layers.DenseLayer( net['l_conv'],
+                                                  num_units=2000,
+                                                  nonlinearity=lasagne.nonlinearities.rectify)
+
+        net['l_h1'] = lasagne.layers.DropoutLayer(net['l_h1'], p=0.5)
+
+        net['l_h2'] =  lasagne.layers.DenseLayer( net['l_h1'],
+                                                  num_units=1000,
+                                                  nonlinearity=lasagne.nonlinearities.rectify)
+        
+        net['l_h2'] = lasagne.layers.DropoutLayer(net['l_h2'], p=0.5)
+        
+        net['l_out'] = lasagne.layers.DenseLayer(
+                net['l_h2'],
+                num_units=self.num_ans ,
+                nonlinearity=lasagne.nonlinearities.softmax)
+
+
+        if param_type is not None:
+            self.add_params(net['l_out'], param_type)
+        print "Done building final MLP ..."
+        return net
 
     #---------------------------------------------------
     #
@@ -488,7 +520,7 @@ class MODEL:
 
         ql_out = self.st_qmbd_mlp_model(qembd,param_type=l_param_type[1] )['l_out']
         ql_out = lasagne.layers.get_output(ql_out)
-        mlp_input = ql_out * vgg_out
+        mlp_input = T.concatenate([ql_out,vgg_out],axis=1)
         network = self.final_mlp_model(mlp_input, param_type=l_param_type[2])['l_out']
         prediction = lasagne.layers.get_output(network, deterministic=False)
 
@@ -512,7 +544,39 @@ class MODEL:
         return train, ans_predict
 
 
+    def build_vqa_model_skip_thought_conv(self):
+        qembd, iX, Y = self.ql_out, self.iX, self.Y
+        l_param_type = [ 'vgg_feature_mlp', 'skip_thought_mlp', 'final_conv_mlp' ]
 
+        vgg_mlp_net = self.vgg_feature_mlp(iX,param_type=l_param_type[0])['l_out']
+        vgg_out = lasagne.layers.get_output(vgg_mlp_net)
+
+        ql_out = self.st_qmbd_mlp_model(qembd,param_type=l_param_type[1] )['l_out']
+        ql_out = lasagne.layers.get_output(ql_out)
+
+        mlp_input = T.concatenate([ql_out,vgg_out],axis=1)
+        mlp_input = mlp_input.dimshuffle([0, 'x', 1])
+        network = self.conv_final_mlp_model(mlp_input, param_type=l_param_type[2])['l_out']
+        prediction = lasagne.layers.get_output(network, deterministic=False)
+
+        loss =  lasagne.objectives.categorical_crossentropy(prediction, Y)
+        loss = loss.mean()
+        params = self.get_params(l_param_type)
+        all_grads = T.grad(loss, params)
+        if self.grad_clip != None:
+            all_grads = [T.clip(g, self.grad_clip[0], self.grad_clip[1]) for g in all_grads]
+        updates = lasagne.updates.adam(all_grads, params, learning_rate=0.01)
+
+        test_prediction = lasagne.layers.get_output(network, deterministic=True)
+        test_prediction = T.argmax(test_prediction, axis=1)
+        acc = T.mean(T.eq(test_prediction, Y),dtype=theano.config.floatX)
+        print "Compiling..."
+        self.timer.set_checkpoint('compile')
+        train = theano.function([qembd, iX, Y], [loss], updates=updates, allow_input_downcast=True)
+        ans_predict = theano.function([qembd, iX, Y], acc, allow_input_downcast=True)
+        print "Compile time(mins)", self.timer.print_checkpoint('compile')
+        print "Done Compiling vqa_model_skip_thought_vanilla model..."
+        return train, ans_predict
 
 
 

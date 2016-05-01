@@ -114,7 +114,7 @@ class vqa_type:
 
     def train(self):
         qtype_predict, qembd_fn = self.train_qn_classifier(epochs=0)
-        atrain, apredict = self.model.build_vqa_model_skip_thought_vanilla()#sparse_ids_only_val()
+        atrain, apredict = self.model.build_vqa_model_skip_thought_conv()
         self.timer.set_checkpoint('param_save')
         epoch, no_improv, patience, best_val_acc = 0,0,10,0
         print "Training VQA"
